@@ -48,7 +48,7 @@ server {
 1. 在平台 UI 关联 Supabase 项目(当前状态:未关联,前端自动演示模式)。
 2. 执行建表与 RLS:见 `docs/data-model.md` 第 3、5 节(profiles、spaces、projects、conversations、messages、community_apps、templates)。
 3. 写入公共表种子数据(社区应用、模板)。
-4. 智能体后端(可选):部署 Edge Function `app_atoms_agent_generate`,服务端调用平台 AI(模型 `claude-opus-5 [gentxt]`),以 SSE 返回 `plan`/`step`/`code-delta`/`done`/`error` 事件;前端 `src/lib/agent.ts` 已预留调用分支,配置后零改动切换。
+4. 智能体后端:部署 Edge Function `app_atoms_agent_generate`(仓库内 `app/backend/functions/`,可用 `app/backend/scripts/deploy_function.py` 部署),并经 Management API 写入 Secrets `APP_AI_KEY`/`APP_AI_BASE_URL`(参考 `app/backend/scripts/set_secrets.py`);服务端调用平台 AI(模型 `claude-opus-5 [gentxt]`,`enable_thinking:false` 控制生成时长),以 SSE 返回与演示模式一致的事件流;前端 `src/lib/agent.ts` 优先调用该函数,失败自动回退本地演示智能体。
 5. 回归验证:注册/登录 → 生成应用 → 项目/会话持久化 → 刷新后仍在。
 
 ## 5. 发布后验证清单

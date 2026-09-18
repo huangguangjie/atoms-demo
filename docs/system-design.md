@@ -64,9 +64,9 @@
 6. `AppPreview` 用 `srcDoc` 在 iframe 中运行应用;用户可切「代码」标签查看源码、刷新或关闭预览。
 7. 生成过程中发送按钮变为停止按钮,可随时中止(AbortController + 事件流中止)。
 
-### 4.2 Edge Function 分支(已预留,待 Supabase 连接)
+### 4.2 Edge Function 分支(已部署并实测通过)
 
-`src/lib/agent.ts` 中预留 `app_atoms_agent_generate` Edge Function 的 SSE 调用分支:配置就绪后,`runAgent` 改为请求该函数,由服务端调用平台 AI 能力(指定模型 `claude-opus-5 [gentxt]`,密钥由平台注入,前端不持有)。事件协议与演示模式一致(`plan`、`step`、`code-delta`、`done`、`error`),前端零改动切换。
+`src/lib/agent.ts` 优先调用已部署的 `app_atoms_agent_generate` Edge Function(地址由 `src/lib/supabase.ts` 提供):服务端经平台 AI 网关调用 `claude-opus-5 [gentxt]` 生成单文件 HTML,密钥仅存于 Supabase Edge Function Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有任何第三方密钥;请求携带 JWT 时由服务端校验登录态。函数以 SSE 返回与演示模式一致的事件协议(`message`、`plan`、`step-start/step-done`、`code-start`、`code-delta`、`app`、`done`、`error`),生成完成后前端照常落库项目;调用失败自动回退本地演示智能体,保证离线可用。
 
 ### 4.3 认证与会话联动
 
