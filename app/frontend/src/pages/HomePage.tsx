@@ -47,6 +47,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import ChatMessage, { type ChatMessageData } from '@/components/chat/ChatMessage';
 import AppPreview from '@/components/preview/AppPreview';
 import TemplatePlaceholderDialog from '@/components/templates/TemplatePlaceholderDialog';
+import AuthDialog from '@/components/auth/AuthDialog';
 import { DEMO_KIND_META, buildDemoApp, TEMPLATE_CATEGORY_KIND, type DemoApp } from '@/lib/demo-apps';
 import { runAgent, type AgentPlanStep } from '@/lib/agent';
 import {
@@ -147,6 +148,7 @@ export default function HomePage() {
   // 模板占位填写:首页模板快捷区点击模板后先填写占位内容再生成
   const [placeholderTemplate, setPlaceholderTemplate] = useState<Template | null>(null);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
 
   const displayName = profile?.display_name ?? '开发者';
   const uid = user?.id ?? 'demo-user';
@@ -193,20 +195,24 @@ export default function HomePage() {
   /** 生成完成后把应用落成项目(含应用 HTML),进入「我的项目」与侧边栏联动 */
   const handleAppCreated = async (app: DemoApp) => {
     const meta = DEMO_KIND_META[app.kind];
-    const project = await createProject({
-      userId: uid,
-      spaceId: currentSpace?.id ?? null,
-      name: app.title,
-      description: `智能体生成的${meta.label}`,
-      source: 'created',
-      coverGradient: meta.gradient,
-      coverEmoji: meta.emoji,
-      appHtml: app.files[0].content,
-    });
-    if (project) {
-      toast.success(`项目「${app.title}」已保存到我的项目`);
-      fetchProjects(uid, false).then(setProjects).catch(() => undefined);
-      window.dispatchEvent(new Event('atoms:projects-updated'));
+    try {
+      const project = await createProject({
+        userId: uid,
+        spaceId: currentSpace?.id ?? null,
+        name: app.title,
+        description: `智能体生成的${meta.label}`,
+        source: 'created',
+        coverGradient: meta.gradient,
+        coverEmoji: meta.emoji,
+        appHtml: app.files[0].content,
+      });
+      if (project) {
+        toast.success(`项目「${app.title}」已保存到我的项目`);
+        fetchProjects(uid, false).then(setProjects).catch(() => undefined);
+        window.dispatchEvent(new Event('atoms:projects-updated'));
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '项目保存失败,请重试');
     }
   };
 
@@ -218,21 +224,33 @@ export default function HomePage() {
     }
     if (generating) return;
 
-    // 复用当前对话或创建新对话
+    // 未登录(Supabase 已配置)时先弹登录,避免伪造身份触发 RLS/外键报错
+    if (!demoMode && !user) {
+      setAuthOpen(true);
+      toast.info('请先登录后再发起对话');
+      return;
+    }
+
+    // 复用当前对话或创建新对话;Supabase 报错原样透出,便于定位真实原因
     let conv = conversation;
     if (!conv) {
       const title = text.length > 24 ? `${text.slice(0, 24)}…` : text;
-      const created = await createConversation(uid, currentSpace?.id ?? null, title);
-      if (!created) {
-        toast.error('创建对话失败,请重试');
+      try {
+        conv = await createConversation(uid, currentSpace?.id ?? null, title);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '创建对话失败,请重试');
         return;
       }
-      conv = created;
-      setConversation(created);
+      setConversation(conv);
       window.dispatchEvent(new Event('atoms:conversations-updated'));
     }
 
-    await insertMessage(conv.id, 'user', text);
+    try {
+      await insertMessage(conv.id, 'user', text);
+    } catch (error) {
+      console.error('[chat] 用户消息写入失败:', error);
+      toast.warning(error instanceof Error ? error.message : '消息写入失败,对话内容可能不会保存');
+    }
     const assistantId = `assistant-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
@@ -247,6 +265,7 @@ export default function HomePage() {
     abortRef.current = controller;
     let firstMessage = '';
     let finalMessage = '';
+    let errorMessage = '';
 
     try {
       await runAgent({
@@ -260,6 +279,7 @@ export default function HomePage() {
             void handleAppCreated(event.app);
             return;
           }
+          if (event.type === 'error') errorMessage = event.message;
           setMessages((prev) =>
             prev.map((m): ChatMessageData => {
               if (m.id !== assistantId) return m;
@@ -309,8 +329,16 @@ export default function HomePage() {
     } finally {
       setGenerating(false);
       abortRef.current = null;
-      const persisted = [firstMessage, finalMessage].filter(Boolean).join('\n\n') || '生成已结束';
-      await insertMessage(conv.id, 'assistant', persisted);
+      const parts = [firstMessage, finalMessage].filter(Boolean);
+      // 错误同样要如实落库:历史回放能看到失败的真实原因,而不是「假成功」
+      const persisted = errorMessage
+        ? `${parts.length > 0 ? `${parts.join('\n\n')}\n\n` : ''}生成出现问题:${errorMessage}`
+        : parts.join('\n\n') || '生成已结束';
+      try {
+        await insertMessage(conv.id, 'assistant', persisted);
+      } catch (error) {
+        console.error('[chat] 助手消息写入失败:', error);
+      }
     }
   };
 
@@ -349,9 +377,9 @@ export default function HomePage() {
         setPlaceholderTemplate(null);
         setPreviewApp(generated);
         fetchProjects(uid, false).then(setProjects).catch(() => undefined);
-      } else {
-        toast.error('创建项目失败,请重试');
       }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '创建项目失败,请重试');
     } finally {
       setCreatingTemplate(false);
     }
@@ -816,7 +844,14 @@ export default function HomePage() {
     if (quickTab === 'templates') {
       return templates.slice(0, 4).map((tpl) => (
         <button key={tpl.id} type="button" className="group text-left"
-          onClick={() => setPlaceholderTemplate(tpl)}
+          onClick={() => {
+            if (!demoMode && !user) {
+              setAuthOpen(true);
+              toast.info('请先登录后再使用模板');
+              return;
+            }
+            setPlaceholderTemplate(tpl);
+          }}
         >
           <div className={cn(
             'flex h-28 items-center justify-center rounded-xl bg-gradient-to-br text-3xl shadow-sm transition-transform group-hover:scale-[1.02]',
@@ -881,6 +916,9 @@ export default function HomePage() {
         }}
         submitting={creatingTemplate}
       />
+
+      {/* 登录弹窗:未登录发起对话/使用模板时弹出 */}
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
 
       {/* MCP 连接面板:配置远程 MCP 服务,localStorage 持久化 */}
       <Dialog open={mcpOpen} onOpenChange={setMcpOpen}>

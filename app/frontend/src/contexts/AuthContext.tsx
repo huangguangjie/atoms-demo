@@ -4,10 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 import {
   demoProfile,
   demoSpace,
@@ -50,22 +52,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentSpace, setCurrentSpaceState] = useState<Space | null>(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
 
-  const loadUserData = useCallback(async (user: User) => {
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
-    setProfile((existing as Profile) ?? null);
+  // 同一用户的资料/空间初始化可能被 getSession 与 onAuthStateChange 双路并发触发,
+  // 这里按用户 id 去重保证并发只执行一次,避免重复初始化引发主键冲突误报
+  const inflightLoadRef = useRef<{ userId: string; promise: Promise<void> } | null>(null);
 
-    const displayName = displayNameOf(user);
-    const userSpaces = await ensureProfileAndSpace(user.id, user.email ?? '', displayName);
-    setSpaces(userSpaces);
-    setCurrentSpaceState((prev) => {
-      if (prev && userSpaces.some((s) => s.id === prev.id)) return prev;
-      return userSpaces.find((s) => s.is_default) ?? userSpaces[0] ?? null;
-    });
-  }, []);
+  const loadUserData = useCallback(
+    (user: User): Promise<void> => {
+      const inflight = inflightLoadRef.current;
+      if (inflight && inflight.userId === user.id) return inflight.promise;
+      const promise = (async () => {
+        // 新登录刚签发的 JWT 可能因服务端时钟偏移被判定为「签发于未来」,首次资料读取
+        // 会命中一次瞬时 401;这里做有限次重试以吸收瞬时错误,重试耗尽后仍原样透出,
+        // 避免登录初期就需要手动刷新才能恢复资料与默认空间。
+        const maxAttempts = 3;
+        try {
+          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+              const { data: existing, error: profileError } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (profileError) {
+                throw new Error(`读取用户资料失败:${profileError.message}`);
+              }
+              setProfile((existing as Profile) ?? null);
+
+              const displayName = displayNameOf(user);
+              const userSpaces = await ensureProfileAndSpace(user.id, user.email ?? '', displayName);
+              setSpaces(userSpaces);
+              setCurrentSpaceState((prev) => {
+                if (prev && userSpaces.some((s) => s.id === prev.id)) return prev;
+                return userSpaces.find((s) => s.is_default) ?? userSpaces[0] ?? null;
+              });
+              return;
+            } catch (error) {
+              // 资料初始化失败必须暴露真实报错,避免静默导致后续建对话/建项目连锁失败
+              if (attempt < maxAttempts) {
+                console.warn(`[auth] 用户数据加载第 ${attempt} 次失败,3 秒后重试:`, error);
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+              } else {
+                console.error('[auth] 加载用户数据失败:', error);
+                toast.error(error instanceof Error ? error.message : '用户数据加载失败,请刷新重试');
+              }
+            }
+          }
+        } finally {
+          if (inflightLoadRef.current?.promise === promise) {
+            inflightLoadRef.current = null;
+          }
+        }
+      })();
+      inflightLoadRef.current = { userId: user.id, promise };
+      return promise;
+    },
+    [],
+  );
 
   useEffect(() => {
     // 演示模式:未配置 Supabase,直接以演示身份进入

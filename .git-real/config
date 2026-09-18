@@ -1,0 +1,18 @@
+[core]
+	bare = false
+	repositoryformatversion = 0
+	filemode = true
+	logallrefupdates = true
+	worktree = ../../../workspace
+[lfs]
+	repositoryformatversion = 0
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+[remote "origin"]
+	url = https://github.com/huangguangjie/atoms-demo.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[lfs "https://github.com/huangguangjie/atoms-demo.git/info/lfs"]
+	access = basic

@@ -1,0 +1,8 @@
+修复创建对话失败:未登录守卫与真实错误透出
+
+- 数据层写操作/主要查询显式抛出 Supabase 错误,不再静默吞错
+- 未登录(云端模式)发起对话/克隆/模板生成先弹登录框,不再以非法 UUID 写库
+- Edge Function 失败向对话流透出 error 事件,禁止静默回退演示智能体
+- Home/Resources/Projects/Sidebar 透出真实错误提示
+- 新增 debug_conversation.py、test_agent_e2e.py 验证脚本
+- 同步 system-design/usage/deployment 文档与发布后验证清单

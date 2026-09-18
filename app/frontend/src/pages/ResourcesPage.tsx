@@ -103,21 +103,23 @@ export default function ResourcesPage() {
     const uid = requireAuth();
     if (!uid) return;
     const generated = appToDemoApp(app);
-    const project = await createProject({
-      userId: uid,
-      spaceId: currentSpace?.id ?? null,
-      name: `${pickAppTitle(app.title)} 克隆`,
-      description: `从社区克隆的应用(原作者:${app.author_name})`,
-      source: 'cloned',
-      coverGradient: app.cover_gradient,
-      coverEmoji: app.cover_emoji,
-      appHtml: generated.files[0].content,
-    });
-    if (project) {
-      toast.success(`已克隆「${app.title}」到我的项目,可打开预览并魔改`);
-      window.dispatchEvent(new Event('atoms:projects-updated'));
-    } else {
-      toast.error('克隆失败,请重试');
+    try {
+      const project = await createProject({
+        userId: uid,
+        spaceId: currentSpace?.id ?? null,
+        name: `${pickAppTitle(app.title)} 克隆`,
+        description: `从社区克隆的应用(原作者:${app.author_name})`,
+        source: 'cloned',
+        coverGradient: app.cover_gradient,
+        coverEmoji: app.cover_emoji,
+        appHtml: generated.files[0].content,
+      });
+      if (project) {
+        toast.success(`已克隆「${app.title}」到我的项目,可打开预览并魔改`);
+        window.dispatchEvent(new Event('atoms:projects-updated'));
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '克隆失败,请重试');
     }
   };
 
@@ -152,9 +154,9 @@ export default function ResourcesPage() {
         window.dispatchEvent(new Event('atoms:projects-updated'));
         setPlaceholderTemplate(null);
         setPreviewApp(generated);
-      } else {
-        toast.error('创建项目失败,请重试');
       }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '创建项目失败,请重试');
     } finally {
       setCreatingTemplate(false);
     }
