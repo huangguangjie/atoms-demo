@@ -49,7 +49,8 @@ server {
 2. 执行建表与 RLS:见 `docs/data-model.md` 第 3、5 节(profiles、spaces、projects、conversations、messages、community_apps、templates)。
 3. 写入公共表种子数据(社区应用、模板)。
 4. 智能体后端:部署 Edge Function `app_atoms_agent_generate`(仓库内 `app/backend/functions/`,可用 `app/backend/scripts/deploy_function.py` 部署),并经 Management API 写入 Secrets `APP_AI_KEY`/`APP_AI_BASE_URL`(参考 `app/backend/scripts/set_secrets.py`);服务端调用平台 AI(模型 `claude-opus-5 [gentxt]`,`enable_thinking:false` 控制生成时长),以 SSE 返回与演示模式一致的事件流;前端 `src/lib/agent.ts` 优先调用该函数,失败自动回退本地演示智能体。
-5. 回归验证:注册/登录 → 生成应用 → 项目/会话持久化 → 刷新后仍在。
+5. 语音转写:部署 Edge Function `app_atoms_transcribe_audio`(复用 Secrets `APP_AI_KEY`/`APP_AI_BASE_URL`,模型 `scribe_v2`;仅接受登录用户,音频 ≤10MB/≤60s,密钥仅在服务端);前端 `isTranscribeAvailable` 判断可用性,失败自动回退浏览器原生识别。已部署并实测通过:`https://pofchtyjqwevchiiqags.supabase.co/functions/v1/app_atoms_transcribe_audio`(验证脚本 `app/backend/scripts/test_transcribe.py`)。
+6. 回归验证:注册/登录 → 生成应用 → 项目/会话持久化 → 模板占位填写生成 → 语音转写 → 刷新后仍在。
 
 ## 5. 发布后验证清单
 
@@ -60,3 +61,5 @@ server {
 - [ ] 生成应用自动出现在「我的项目」与侧边栏最近对话,点击可回放
 - [ ] 资源页发现/模板切换与分类过滤正常
 - [ ] 侧边栏折叠/拖拽、导航、登录入口正常
+- [ ] 模板卡片(首页快捷区/资源页)弹出占位填写弹窗,填写生成后占位内容已替换、项目落库且可回放
+- [ ] 语音按钮录音 → 转写文本填入输入框;转写服务不可用或浏览器不支持时回退原生识别

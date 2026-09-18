@@ -60,6 +60,13 @@ export interface CommunityApp {
   cover_emoji: string;
 }
 
+export interface TemplatePlaceholder {
+  key: string;
+  label: string;
+  description?: string;
+  default_value?: string;
+}
+
 export interface Template {
   id: string;
   title: string;
@@ -67,6 +74,7 @@ export interface Template {
   category: string;
   cover_gradient: string;
   cover_emoji: string;
+  placeholders?: TemplatePlaceholder[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +103,47 @@ export const supabase = createClient(
 export function getSupabaseFunctionUrl(name: string): string | null {
   if (!isSupabaseConfigured || !supabaseUrl) return null;
   return `${supabaseUrl}/functions/v1/${name}`;
+}
+
+// ---------------------------------------------------------------------------
+// 平台语音转写(scribe_v2,经 Edge Function 转发平台 AI 网关,密钥不出服务端)
+// ---------------------------------------------------------------------------
+
+const TRANSCRIBE_FUNCTION_NAME = 'app_atoms_transcribe_audio';
+
+export interface TranscribeResult {
+  text: string;
+  model: string;
+  cost_ms: number;
+}
+
+/** 上传录音文件到转写 Edge Function,返回识别文本;失败时抛错由调用方回退浏览器识别 */
+export async function transcribeAudio(file: File): Promise<TranscribeResult> {
+  const url = getSupabaseFunctionUrl(TRANSCRIBE_FUNCTION_NAME);
+  if (!url) throw new Error('语音转写服务未配置');
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const form = new FormData();
+  form.append('audio', file, file.name || 'voice.webm');
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const data = (await resp.json().catch(() => null)) as { text?: string; model?: string; cost_ms?: number; error?: string } | null;
+  if (!resp.ok || !data?.text) {
+    throw new Error(String(data?.error ?? `转写服务响应异常(${resp.status})`));
+  }
+  return {
+    text: String(data.text),
+    model: String(data.model ?? ''),
+    cost_ms: Number(data.cost_ms ?? 0),
+  };
+}
+
+/** 平台语音转写是否可用(已配置 Supabase 时可用);不可用时调用方直接回退浏览器识别 */
+export function isTranscribeAvailable(): boolean {
+  return Boolean(getSupabaseFunctionUrl(TRANSCRIBE_FUNCTION_NAME));
 }
 
 // ---------------------------------------------------------------------------
@@ -140,12 +189,51 @@ const seedCommunityApps: CommunityApp[] = [
 ];
 
 const seedTemplates: Template[] = [
-  { id: 'tpl-1', title: 'Landing Page Kit', description: '现代 SaaS 落地页模板,含 Hero、功能、定价与 FAQ 区块,替换文案即可上线。', category: 'Website', cover_gradient: 'from-blue-500 to-cyan-400', cover_emoji: '🚀' },
-  { id: 'tpl-2', title: 'E-commerce Starter', description: '含商品列表、购物车与订单流的电商基础方案,占位数据可直接替换为你的商品。', category: 'E-commerce', cover_gradient: 'from-amber-500 to-orange-500', cover_emoji: '🛒' },
-  { id: 'tpl-3', title: 'Dashboard Starter', description: '数据看板模板,内置图表卡片网格与侧边导航,适合快速搭建管理后台。', category: 'Productivity', cover_gradient: 'from-violet-500 to-fuchsia-500', cover_emoji: '📈' },
-  { id: 'tpl-4', title: 'Blog Starter', description: '极简博客模板,支持文章列表与详情页,替换 Markdown 内容即可发布。', category: 'Blog', cover_gradient: 'from-emerald-500 to-teal-400', cover_emoji: '✍️' },
-  { id: 'tpl-5', title: 'Game Starter', description: 'Canvas 小游戏骨架,含主循环、计分与开始/结束界面,替换素材即可扩展。', category: 'Game', cover_gradient: 'from-indigo-500 to-sky-400', cover_emoji: '🕹️' },
-  { id: 'tpl-6', title: 'Business Card', description: '个人名片页模板,含头像、社交链接与联系表单,适合快速展示个人品牌。', category: 'Business Card', cover_gradient: 'from-rose-500 to-pink-500', cover_emoji: '💼' },
+  {
+    id: 'tpl-1', title: 'Landing Page Kit', description: '现代 SaaS 落地页模板,含 Hero、功能、定价与 FAQ 区块,替换文案即可上线。', category: 'Website', cover_gradient: 'from-blue-500 to-cyan-400', cover_emoji: '🚀',
+    placeholders: [
+      { key: 'brand_name', label: '产品名称', description: '用于导航栏 Logo、页脚与产品介绍', default_value: 'Landing Page Kit' },
+      { key: 'hero_slogan', label: '主标语', description: '首页 Hero 区的大标题文案', default_value: '让团队协作快人一步' },
+      { key: 'hero_desc', label: '产品简介', description: 'Hero 区一句话介绍你的产品价值', default_value: '帮你把想法变成可执行的任务流,实时同步、自动提醒,团队效率提升 3 倍。' },
+      { key: 'price_pro', label: '专业版定价', description: '展示为「¥xx/人/月」,填数字即可', default_value: '68' },
+    ],
+  },
+  {
+    id: 'tpl-2', title: 'E-commerce Starter', description: '含商品列表、购物车与订单流的电商基础方案,占位数据可直接替换为你的商品。', category: 'E-commerce', cover_gradient: 'from-amber-500 to-orange-500', cover_emoji: '🛒',
+    placeholders: [
+      { key: 'shop_name', label: '店铺名称', description: '看板标题与品牌展示位', default_value: 'E-commerce Starter' },
+      { key: 'total_revenue', label: '总收入金额', description: '看板「总收入」指标卡金额', default_value: '¥ 128,460' },
+    ],
+  },
+  {
+    id: 'tpl-3', title: 'Dashboard Starter', description: '数据看板模板,内置图表卡片网格与侧边导航,适合快速搭建管理后台。', category: 'Productivity', cover_gradient: 'from-violet-500 to-fuchsia-500', cover_emoji: '📈',
+    placeholders: [
+      { key: 'dashboard_title', label: '看板名称', description: '看板页大标题', default_value: 'Dashboard Starter' },
+      { key: 'kpi_revenue', label: '总收入指标', description: '「总收入」指标卡金额', default_value: '¥ 128,460' },
+      { key: 'kpi_users', label: '新增用户指标', description: '「新增用户」指标卡数值', default_value: '3,208' },
+    ],
+  },
+  {
+    id: 'tpl-4', title: 'Blog Starter', description: '极简博客模板,支持文章列表与详情页,替换 Markdown 内容即可发布。', category: 'Blog', cover_gradient: 'from-emerald-500 to-teal-400', cover_emoji: '✍️',
+    placeholders: [
+      { key: 'blog_name', label: '博客名称', description: '博客标题与展示名', default_value: 'Blog Starter' },
+      { key: 'first_post_intro', label: '首篇文章简介', description: '默认第一篇博文的正文内容', default_value: '这是我用 Atoms 智能体生成的第一个应用,点击卡片可以编辑,右上角 × 可以删除。' },
+    ],
+  },
+  {
+    id: 'tpl-5', title: 'Game Starter', description: 'Canvas 小游戏骨架,含主循环、计分与开始/结束界面,替换素材即可扩展。', category: 'Game', cover_gradient: 'from-indigo-500 to-sky-400', cover_emoji: '🕹️',
+    placeholders: [
+      { key: 'game_name', label: '游戏名称', description: '页面标题与展示名', default_value: 'Game Starter' },
+    ],
+  },
+  {
+    id: 'tpl-6', title: 'Business Card', description: '个人名片页模板,含头像、社交链接与联系表单,适合快速展示个人品牌。', category: 'Business Card', cover_gradient: 'from-rose-500 to-pink-500', cover_emoji: '💼',
+    placeholders: [
+      { key: 'person_name', label: '姓名/品牌名', description: '名片页 Logo、页脚与自我介绍中使用', default_value: 'Business Card' },
+      { key: 'personal_tagline', label: '个人标语', description: '名片页大标题一句话', default_value: '让团队协作快人一步' },
+      { key: 'personal_intro', label: '个人简介', description: '名片页副标题,介绍你自己', default_value: '帮你把想法变成可执行的任务流,实时同步、自动提醒,团队效率提升 3 倍。' },
+    ],
+  },
 ];
 
 // 内存演示态(未配置 Supabase 时的降级,仅当前浏览器会话内有效)

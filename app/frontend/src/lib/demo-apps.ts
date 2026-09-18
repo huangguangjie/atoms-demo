@@ -94,6 +94,16 @@ function esc(s: string): string {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 }
 
+/** JS 单引号字符串转义(占位值注入生成应用的内联脚本时使用) */
+function jsEsc(s: string): string {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/** JS 双引号字符串转义 */
+function dqEsc(s: string): string {
+  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 // ---------------------------------------------------------------------------
 // 阅读进度小站
 // ---------------------------------------------------------------------------
@@ -403,12 +413,93 @@ const BUILDERS: Record<DemoAppKind, (pal: Palette, title: string) => string> = {
   notes: buildNotes,
 };
 
+// ---------------------------------------------------------------------------
+// 模板占位内容替换:把用户填写的占位值真实注入生成的单文件 HTML
+// ---------------------------------------------------------------------------
+
+/** 标题类占位 key(与迁移 002 的占位定义保持一致),命中第一个非空值替换应用标题 */
+const TITLE_VALUE_KEYS = [
+  'brand_name',
+  'shop_name',
+  'dashboard_title',
+  'blog_name',
+  'game_name',
+  'person_name',
+] as const;
+
+/**
+ * 将占位值应用到生成的 HTML:来源串与生成器内置文案一一对应,
+ * 空值跳过(保留默认内容);HTML 上下文用 esc 转义,脚本上下文用 jsEsc/dqEsc 转义。
+ */
+export function applyTemplateValues(
+  html: string,
+  values: Record<string, string>,
+  title: string,
+): string {
+  let out = html;
+  const v = (key: string) => (values[key] ?? '').trim();
+  const swap = (from: string, to: string) => {
+    if (from && to && out.includes(from)) out = out.split(from).join(to);
+  };
+
+  // 落地页/名片:主标语与个人简介(HTML 上下文)
+  const slogan = v('hero_slogan') || v('personal_tagline');
+  if (slogan) swap('让团队协作<br />快人一步', esc(slogan));
+  const intro = v('hero_desc') || v('personal_intro');
+  if (intro) swap('帮你把想法变成可执行的任务流,实时同步、自动提醒,团队效率提升 3 倍。', esc(intro));
+  // 落地页:专业版定价(HTML 上下文)
+  const price = v('price_pro');
+  if (price) swap('¥68<span>/人/月</span>', `¥${esc(price)}<span>/人/月</span>`);
+  // 看板:收入与用户指标(单引号 JS 字符串上下文)
+  const revenue = v('total_revenue') || v('kpi_revenue');
+  if (revenue) swap('¥ 128,460', `¥ ${jsEsc(revenue.replace(/^¥\s*/, ''))}`);
+  const users = v('kpi_users');
+  if (users) swap('3,208', jsEsc(users));
+  // 博客:首篇文章简介(notes 应用第一篇笔记正文,单引号 JS 字符串上下文)
+  const postIntro = v('first_post_intro');
+  if (postIntro) {
+    swap(
+      '这是我用 Atoms 智能体生成的第一个应用,点击卡片可以编辑,右上角 × 可以删除。',
+      jsEsc(postIntro),
+    );
+  }
+  // 标题类占位:Logo/页脚/H1(HTML 上下文)与欢迎笔记名(双引号 JS 字符串上下文)
+  const nameKey = TITLE_VALUE_KEYS.find((key) => v(key));
+  if (nameKey) {
+    swap(esc(title), esc(v(nameKey)));
+    swap(`'欢迎使用 '+"${title}"`, `'欢迎使用 '+"${dqEsc(v(nameKey))}"`);
+  }
+  return out;
+}
+
+/** 模板分类 → 生成应用类型(占位替换流程使用,确保占位来源文案真实存在) */
+export const TEMPLATE_CATEGORY_KIND: Record<string, DemoAppKind> = {
+  Website: 'landing',
+  'E-commerce': 'dashboard',
+  Productivity: 'dashboard',
+  Blog: 'notes',
+  Game: 'notes',
+  'Business Card': 'landing',
+};
+
+export interface DemoAppBuildOptions {
+  /** 覆盖从提示词提炼的标题(模板流程传模板原名) */
+  title?: string;
+  /** 覆盖按提示词推断的应用类型 */
+  kind?: DemoAppKind;
+  /** 模板占位替换值(键值对,空值保留默认内容) */
+  values?: Record<string, string>;
+}
+
 /** 根据提示词与主题构建演示应用(单文件 HTML) */
-export function buildDemoApp(prompt: string, theme: string): DemoApp {
-  const kind = pickDemoAppKind(prompt);
-  const title = pickAppTitle(prompt);
+export function buildDemoApp(prompt: string, theme: string, options?: DemoAppBuildOptions): DemoApp {
+  const kind = options?.kind ?? pickDemoAppKind(prompt);
+  const title = options?.title ?? pickAppTitle(prompt);
   const pal = themeToPalette(theme);
-  const content = BUILDERS[kind](pal, title);
+  let content = BUILDERS[kind](pal, title);
+  if (options?.values) {
+    content = applyTemplateValues(content, options.values, title);
+  }
   return {
     title,
     kind,
