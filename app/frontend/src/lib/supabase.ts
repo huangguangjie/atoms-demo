@@ -319,16 +319,36 @@ export async function ensureProfileAndSpace(
   return (spaces as Space[]) ?? [];
 }
 
-export async function fetchRecentConversations(userId: string): Promise<Conversation[]> {
+/** 新建工作区(云端落库 spaces,is_default=false,不影响默认工作区唯一索引) */
+export async function createSpace(userId: string, name: string): Promise<Space> {
   if (!isSupabaseConfigured) {
-    return [...demoConversations]
+    return { id: demoId('space'), owner_id: userId, name, is_default: false };
+  }
+  const { data, error } = await supabase
+    .from('spaces')
+    .insert({ owner_id: userId, name, is_default: false })
+    .select()
+    .single();
+  if (error) {
+    throw new Error(`创建工作区失败:${error.message}`);
+  }
+  return data as Space;
+}
+
+/** 最近对话:用户维度 + 可选工作区过滤(切换工作区后仅展示该工作区下的会话) */
+export async function fetchRecentConversations(
+  userId: string,
+  spaceId?: string,
+): Promise<Conversation[]> {
+  if (!isSupabaseConfigured) {
+    return demoConversations
+      .filter((c) => !spaceId || c.space_id === spaceId)
       .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
       .slice(0, 8);
   }
-  const { data, error } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('user_id', userId)
+  let query = supabase.from('conversations').select('*').eq('user_id', userId);
+  if (spaceId) query = query.eq('space_id', spaceId);
+  const { data, error } = await query
     .order('updated_at', { ascending: false })
     .limit(8);
   if (error) {

@@ -179,6 +179,18 @@ export default function HomePage() {
     window.history.replaceState({}, '');
   }, [location.state, uid, currentSpace?.id]);
 
+  // 侧边栏「新会话」入口:清空当前会话,回到当前工作区的空白对话视图
+  useEffect(() => {
+    const state = location.state as { newChat?: boolean } | null;
+    if (!state?.newChat) return;
+    abortRef.current?.abort();
+    setConversation(null);
+    setMessages([]);
+    setPreviewApp(null);
+    setPrompt('');
+    window.history.replaceState({}, '');
+  }, [location.state]);
+
   // 消息流自动滚动到底部
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -228,6 +240,12 @@ export default function HomePage() {
     if (!demoMode && !user) {
       setAuthOpen(true);
       toast.info('请先登录后再发起对话');
+      return;
+    }
+
+    // 工作区守卫:会话归属当前工作区;已登录但暂无工作区时先引导创建,避免 space_id 落空
+    if (!demoMode && user && !currentSpace && !loading) {
+      toast.error('当前账号暂无工作区,请点击侧边栏空间选择器中的「新建工作区」后再发起对话');
       return;
     }
 

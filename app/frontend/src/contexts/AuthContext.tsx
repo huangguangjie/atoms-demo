@@ -11,6 +11,7 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import {
+  createSpace as supabaseCreateSpace,
   demoProfile,
   demoSpace,
   ensureProfileAndSpace,
@@ -33,6 +34,8 @@ interface AuthContextValue {
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   setCurrentSpace: (space: Space) => void;
+  /** 新建工作区(云端落库 spaces)并切换为当前工作区 */
+  createSpace: (name: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -170,6 +173,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentSpaceState(space);
   }, []);
 
+  const createSpace = useCallback(
+    async (name: string) => {
+      const owner = session?.user?.id ?? (isSupabaseConfigured ? null : demoProfile.id);
+      if (!owner) throw new Error('请先登录后再创建工作区');
+      const space = await supabaseCreateSpace(owner, name);
+      setSpaces((prev) => [...prev, space]);
+      setCurrentSpaceState(space);
+    },
+    [session],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -183,8 +197,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signOut,
       setCurrentSpace,
+      createSpace,
     }),
-    [session, profile, spaces, currentSpace, loading, signIn, signUp, signOut, setCurrentSpace],
+    [
+      session,
+      profile,
+      spaces,
+      currentSpace,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      setCurrentSpace,
+      createSpace,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

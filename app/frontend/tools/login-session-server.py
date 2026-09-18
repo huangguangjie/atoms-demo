@@ -1,27 +1,26 @@
-"""临时登录注入辅助(回归用,不入库):任何 GET 都先做一次真实密码登录,再 302 到带会话片段的首页。
+"""回归辅助:以邮箱+密码真实登录 Supabase,再 302 回前端并注入会话片段。
 
-Browser.goto('http://127.0.0.1:8899/go') -> localhost:3000/#access_token=...
-令牌由服务端程序化拼接,避免手工转写超长 JWT 出错。
+用法:python3 login-session-server.py
+  GET /go?email=<邮箱>&password=<密码>
+凭据由调用方通过查询参数传入,不落在代码里;仅本地回归使用,不部署。
 """
 import json
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ENV = {}
+BASE = ''
+ANON = ''
 for line in open('/workspace/app/frontend/.env.local', encoding='utf-8'):
     line = line.strip()
-    if '=' in line:
-        k, v = line.split('=', 1)
-        ENV[k] = v
-
-BASE = ENV['VITE_SUPABASE_URL'].rstrip('/')
-ANON = ENV['VITE_SUPABASE_ANON_KEY']
-EMAIL = 'browser-1789734428@atoms.test'
-PASSWORD = 'AtomsDemo2026!'
+    if line.startswith('VITE_SUPABASE_URL='):
+        BASE = line.split('=', 1)[1].rstrip('/')
+    elif line.startswith('VITE_SUPABASE_ANON_KEY='):
+        ANON = line.split('=', 1)[1]
 
 
-def fresh_login() -> dict:
-    body = json.dumps({'email': EMAIL, 'password': PASSWORD}).encode()
+def fresh_login(email: str, password: str) -> dict:
+    body = json.dumps({'email': email, 'password': password}).encode()
     req = urllib.request.Request(
         f'{BASE}/auth/v1/token?grant_type=password', data=body,
         headers={'apikey': ANON, 'Content-Type': 'application/json'}, method='POST')
@@ -35,8 +34,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(204)
             self.end_headers()
             return
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != '/go':
+            self.send_response(404)
+            self.end_headers()
+            return
+        qs = urllib.parse.parse_qs(parsed.query)
+        email = (qs.get('email') or [''])[0]
+        password = (qs.get('password') or [''])[0]
+        if not email or not password:
+            msg = b'missing email/password query params'
+            self.send_response(400)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.send_header('Content-Length', str(len(msg)))
+            self.end_headers()
+            self.wfile.write(msg)
+            return
         try:
-            data = fresh_login()
+            data = fresh_login(email, password)
         except Exception as exc:  # noqa: BLE001
             msg = f'login failed: {exc}'.encode()
             self.send_response(500)
