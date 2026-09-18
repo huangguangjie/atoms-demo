@@ -66,7 +66,7 @@
 
 ### 4.2 Edge Function 分支(已部署并实测通过)
 
-`src/lib/agent.ts` 优先调用已部署的 `app_atoms_agent_generate` Edge Function(地址由 `src/lib/supabase.ts` 提供):服务端经平台 AI 网关调用 `claude-opus-5 [gentxt]` 生成单文件 HTML,密钥仅存于 Supabase Edge Function Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有任何第三方密钥;请求携带 JWT 时由服务端校验登录态。函数以 SSE 返回与演示模式一致的事件协议(`message`、`plan`、`step-start/step-done`、`code-start`、`code-delta`、`app`、`done`、`error`),生成完成后前端照常落库项目。错误策略:Supabase 已配置时调用失败会通过 `error` 事件把真实原因透出到对话流,不再静默回退演示智能体(避免兜底掩盖线上故障);仅本地未配置 Supabase 时才使用内置演示智能体。端到端验证脚本:`app/backend/scripts/test_agent_e2e.py`(登录态 SSE 生成,断言 message/plan/app 事件与 HTML 产出)。
+`src/lib/agent.ts` 优先调用已部署的 `app_atoms_agent_generate` Edge Function(地址由 `src/lib/supabase.ts` 提供):服务端经平台 AI 网关调用 `deepseek-v4-flash [gentxt]` 生成单文件 HTML(速度快,确保在平台约 150s wall-clock 时限内完整产出;此前 claude-opus-5 复杂需求下超时截断),密钥仅存于 Supabase Edge Function Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有任何第三方密钥;请求携带 JWT 时由服务端校验登录态。函数以 SSE 返回与演示模式一致的事件协议(`message`、`plan`、`step-start/step-done`、`code-start`、`code-delta`、`app`、`done`、`error`),生成完成后前端照常落库项目。错误策略:Supabase 已配置时调用失败会通过 `error` 事件把真实原因透出到对话流,不再静默回退演示智能体(避免兜底掩盖线上故障);服务端内置 140s 软超时,超时/流中断/HTML 不完整时主动发送 `error` + `done` 收尾,客户端流结束却未收到 `done` 也会抛出「AI 生成连接中断」,错误信息同样如实落库到助手消息(历史回放可见真实失败原因);仅本地未配置 Supabase 时才使用内置演示智能体。端到端验证脚本:`app/backend/scripts/test_agent_e2e.py`(登录态 SSE 生成,断言 message/plan/app 事件与 HTML 产出)。
 
 ### 4.3 认证与会话联动
 

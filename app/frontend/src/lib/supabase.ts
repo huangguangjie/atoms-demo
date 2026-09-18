@@ -271,33 +271,19 @@ export async function ensureProfileAndSpace(
 ): Promise<Space[]> {
   if (!isSupabaseConfigured) return [demoSpace];
 
-  const { data: existingProfile, error: profileQueryError } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('id', userId)
-    .maybeSingle();
-  if (profileQueryError) {
-    throw new Error(`读取用户资料失败:${profileQueryError.message}`);
-  }
-
-  if (!existingProfile) {
-    const { error: profileInsertError } = await supabase.from('profiles').insert({
+  // 初始化必须幂等:会话恢复(getSession)与登录事件(onAuthStateChange)可能并发触发,
+  // upsert + ignoreDuplicates 避免并发插入撞 profiles_pkey(线上曾出现 duplicate key 误报)
+  const { error: profileUpsertError } = await supabase.from('profiles').upsert(
+    {
       id: userId,
       display_name: displayName,
       email,
       avatar_color: pickAvatarColor(userId),
-    });
-    if (profileInsertError) {
-      throw new Error(`初始化用户资料失败:${profileInsertError.message}`);
-    }
-    const { error: spaceInsertError } = await supabase.from('spaces').insert({
-      owner_id: userId,
-      name: `${displayName} 的 Atoms`,
-      is_default: true,
-    });
-    if (spaceInsertError) {
-      throw new Error(`初始化默认空间失败:${spaceInsertError.message}`);
-    }
+    },
+    { onConflict: 'id', ignoreDuplicates: true },
+  );
+  if (profileUpsertError) {
+    throw new Error(`初始化用户资料失败:${profileUpsertError.message}`);
   }
 
   const { data: spaces, error: spacesError } = await supabase
@@ -309,19 +295,60 @@ export async function ensureProfileAndSpace(
     throw new Error(`读取空间列表失败:${spacesError.message}`);
   }
 
+  if (!spaces || spaces.length === 0) {
+    const { error: spaceInsertError } = await supabase.from('spaces').insert({
+      owner_id: userId,
+      name: `${displayName} 的 Atoms`,
+      is_default: true,
+    });
+    // 并发兜底:另一路已建好默认空间时,数据库唯一索引会拦截为 23505,视为已初始化
+    if (spaceInsertError && spaceInsertError.code !== '23505') {
+      throw new Error(`初始化默认空间失败:${spaceInsertError.message}`);
+    }
+    const { data: refetchedSpaces, error: refetchError } = await supabase
+      .from('spaces')
+      .select('*')
+      .eq('owner_id', userId)
+      .order('is_default', { ascending: false });
+    if (refetchError) {
+      throw new Error(`读取空间列表失败:${refetchError.message}`);
+    }
+    return (refetchedSpaces as Space[]) ?? [];
+  }
+
   return (spaces as Space[]) ?? [];
 }
 
-export async function fetchRecentConversations(userId: string): Promise<Conversation[]> {
+/** 新建工作区(云端落库 spaces,is_default=false,不影响默认工作区唯一索引) */
+export async function createSpace(userId: string, name: string): Promise<Space> {
   if (!isSupabaseConfigured) {
-    return [...demoConversations]
+    return { id: demoId('space'), owner_id: userId, name, is_default: false };
+  }
+  const { data, error } = await supabase
+    .from('spaces')
+    .insert({ owner_id: userId, name, is_default: false })
+    .select()
+    .single();
+  if (error) {
+    throw new Error(`创建工作区失败:${error.message}`);
+  }
+  return data as Space;
+}
+
+/** 最近对话:用户维度 + 可选工作区过滤(切换工作区后仅展示该工作区下的会话) */
+export async function fetchRecentConversations(
+  userId: string,
+  spaceId?: string,
+): Promise<Conversation[]> {
+  if (!isSupabaseConfigured) {
+    return demoConversations
+      .filter((c) => !spaceId || c.space_id === spaceId)
       .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
       .slice(0, 8);
   }
-  const { data, error } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('user_id', userId)
+  let query = supabase.from('conversations').select('*').eq('user_id', userId);
+  if (spaceId) query = query.eq('space_id', spaceId);
+  const { data, error } = await query
     .order('updated_at', { ascending: false })
     .limit(8);
   if (error) {

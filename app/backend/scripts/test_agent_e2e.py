@@ -11,7 +11,7 @@ import urllib.request
 
 ENV_PATH = "/workspace/app/frontend/.env.local"
 PASSWORD = "AtomsDemo2026!"
-PROMPT = "做一个极简待办清单:输入待办、回车添加、点击切换完成、带计数,中文界面。"
+PROMPT = "做一个极简白噪音混音器,雨声/海浪/风声三轨切换,浅色主题,中文界面。"
 
 
 def load_env(path: str) -> dict:

@@ -10,6 +10,7 @@ import {
   Home,
   LogOut,
   MessageSquare,
+  MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -30,6 +31,7 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthDialog from '@/components/auth/AuthDialog';
+import CreateSpaceDialog from '@/components/workspace/CreateSpaceDialog';
 import {
   demoProfile,
   fetchRecentConversations,
@@ -68,14 +70,17 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [authOpen, setAuthOpen] = useState(false);
+  const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
 
   const isSignedIn = Boolean(user) || demoMode;
 
   useEffect(() => {
     if (loading || !isSignedIn) return;
     const uid = user?.id ?? demoProfile.id;
+    const spaceId = currentSpace?.id;
     const load = () =>
-      fetchRecentConversations(uid)
+      // 最近对话按当前工作区过滤:切换工作区后仅展示该工作区下的会话
+      fetchRecentConversations(uid, spaceId)
         .then(setConversations)
         .catch((error) => {
           console.error('[sidebar] 读取最近对话失败:', error);
@@ -85,7 +90,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     // 首页新建/更新对话后自动刷新最近列表
     window.addEventListener('atoms:conversations-updated', load);
     return () => window.removeEventListener('atoms:conversations-updated', load);
-  }, [loading, isSignedIn, user, location.pathname]);
+  }, [loading, isSignedIn, user, currentSpace?.id, location.pathname]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -95,7 +100,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const profileName = profile?.display_name ?? demoProfile.display_name;
   const avatarColor = profile?.avatar_color ?? demoProfile.avatar_color;
   const initial = profileName.charAt(0).toUpperCase();
-  const activeSpaceName = currentSpace?.name ?? '选择空间';
+  const activeSpaceName = currentSpace?.name ?? '选择工作区';
 
   return (
     <aside
@@ -160,9 +165,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-60">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">空间</DropdownMenuLabel>
-            {spaces.length === 0 && (
-              <div className="px-2 py-1.5 text-sm text-muted-foreground">暂无空间</div>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">工作区</DropdownMenuLabel>
+            {!isSignedIn && (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                登录后自动创建默认工作区
+              </div>
+            )}
+            {isSignedIn && spaces.length === 0 && (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">暂无工作区,点击下方新建</div>
             )}
             {spaces.map((space) => (
               <DropdownMenuItem key={space.id} onClick={() => setCurrentSpace(space)}>
@@ -176,9 +186,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => toast.info('新建空间即将开放')}>
+            <DropdownMenuItem onClick={() => setCreateSpaceOpen(true)} disabled={!isSignedIn}>
               <Plus className="h-4 w-4" />
-              新建空间
+              新建工作区
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -223,12 +233,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
       ) : (
         <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-3">
-          <div className="px-2.5 pb-1.5 text-xs font-medium text-muted-foreground">最近</div>
+          <div className="flex items-center justify-between px-2.5 pb-1.5">
+            <span className="text-xs font-medium text-muted-foreground">最近</span>
+            <button
+              type="button"
+              title="在当前工作区新建会话"
+              onClick={() => navigate('/', { state: { newChat: true } })}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <MessageSquarePlus className="h-3 w-3" />
+              新会话
+            </button>
+          </div>
           {conversations.length === 0 ? (
             <div className="px-2.5 py-3 text-xs leading-5 text-muted-foreground">
-              还没有项目
+              当前工作区还没有会话
               <br />
-              点击「首页」开始。
+              点击「新会话」开始。
             </div>
           ) : (
             <div className="space-y-0.5">
@@ -381,6 +402,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       )}
 
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
+      <CreateSpaceDialog open={createSpaceOpen} onOpenChange={setCreateSpaceOpen} />
     </aside>
   );
 }

@@ -179,6 +179,18 @@ export default function HomePage() {
     window.history.replaceState({}, '');
   }, [location.state, uid, currentSpace?.id]);
 
+  // 侧边栏「新会话」入口:清空当前会话,回到当前工作区的空白对话视图
+  useEffect(() => {
+    const state = location.state as { newChat?: boolean } | null;
+    if (!state?.newChat) return;
+    abortRef.current?.abort();
+    setConversation(null);
+    setMessages([]);
+    setPreviewApp(null);
+    setPrompt('');
+    window.history.replaceState({}, '');
+  }, [location.state]);
+
   // 消息流自动滚动到底部
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -231,6 +243,12 @@ export default function HomePage() {
       return;
     }
 
+    // 工作区守卫:会话归属当前工作区;已登录但暂无工作区时先引导创建,避免 space_id 落空
+    if (!demoMode && user && !currentSpace && !loading) {
+      toast.error('当前账号暂无工作区,请点击侧边栏空间选择器中的「新建工作区」后再发起对话');
+      return;
+    }
+
     // 复用当前对话或创建新对话;Supabase 报错原样透出,便于定位真实原因
     let conv = conversation;
     if (!conv) {
@@ -265,6 +283,7 @@ export default function HomePage() {
     abortRef.current = controller;
     let firstMessage = '';
     let finalMessage = '';
+    let errorMessage = '';
 
     try {
       await runAgent({
@@ -278,6 +297,7 @@ export default function HomePage() {
             void handleAppCreated(event.app);
             return;
           }
+          if (event.type === 'error') errorMessage = event.message;
           setMessages((prev) =>
             prev.map((m): ChatMessageData => {
               if (m.id !== assistantId) return m;
@@ -327,7 +347,11 @@ export default function HomePage() {
     } finally {
       setGenerating(false);
       abortRef.current = null;
-      const persisted = [firstMessage, finalMessage].filter(Boolean).join('\n\n') || '生成已结束';
+      const parts = [firstMessage, finalMessage].filter(Boolean);
+      // 错误同样要如实落库:历史回放能看到失败的真实原因,而不是「假成功」
+      const persisted = errorMessage
+        ? `${parts.length > 0 ? `${parts.join('\n\n')}\n\n` : ''}生成出现问题:${errorMessage}`
+        : parts.join('\n\n') || '生成已结束';
       try {
         await insertMessage(conv.id, 'assistant', persisted);
       } catch (error) {

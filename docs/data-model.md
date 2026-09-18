@@ -22,6 +22,8 @@
 - `app/backend/migrations/001_initial_schema.sql`:建表、`updated_at` 触发器、会话时间戳联动、RLS、索引、种子数据。
 - `app/backend/migrations/002_add_app_html.sql`:`projects` 新增 `app_html` 列。
 - `app/backend/migrations/002_template_placeholders.sql`:`templates` 新增 `placeholders` JSONB 列并写入占位种子数据。
+- `app/backend/migrations/003_space_default_unique.sql`:每个用户默认空间唯一(部分唯一索引),并清理历史重复默认空间。
+- `app/backend/migrations/004_user_init_trigger.sql`:`auth.users` 插入触发器 `handle_new_user`,注册瞬间自动创建资料与默认空间;前端 `ensureProfileAndSpace` 的幂等 upsert 保留为老账号/异常场景的兜底。
 
 ## 2. 实体定义
 
@@ -40,8 +42,10 @@
 |------|------|------|
 | id | uuid | 主键(gen_random_uuid) |
 | owner_id | uuid | → `auth.users.id` |
-| name | text | 空间名(注册后自动创建「个人空间」) |
-| is_default | boolean | 是否默认空间,默认 false |
+| name | text | 空间名;注册时由触发器自动创建「<用户名> 的 Atoms」默认空间,后续可在侧边栏新建 |
+| is_default | boolean | 是否默认空间;每人仅一个 `true`(003 部分唯一索引约束) |
+
+工作区语义:会话(`conversations`)与项目(`projects`)通过 `space_id` 归属工作区;侧边栏「最近对话」按当前工作区过滤,切换工作区即切换会话视图,不同工作区数据互不可见。
 
 ### 2.3 projects(项目)
 
@@ -65,7 +69,7 @@
 |------|------|------|
 | id | uuid | 主键 |
 | user_id | uuid | → `auth.users.id` |
-| space_id | uuid | → `spaces.id`,可空 |
+| space_id | uuid | → `spaces.id`;会话始终归属当前工作区(首页发起对话写入 `currentSpace.id`,无工作区时被守卫拦截) |
 | title | text | 会话标题,默认「新对话」(首条提示词摘要) |
 
 `updated_at` 由 messages 插入触发器自动刷新,作为侧边栏「最近对话」排序依据。
@@ -125,7 +129,7 @@
   - spaces/projects/conversations:`auth.uid() = owner_id|user_id` 的 SELECT/INSERT/UPDATE/DELETE。
   - messages:`exists (select 1 from conversations c where c.id = messages.conversation_id and c.user_id = auth.uid())` 的 SELECT/INSERT/UPDATE。
 - 公共表(community_apps、templates)启用 RLS:SELECT 对所有人开放(`using (true)`);写入仅限认证用户。
-- 触发器:全部表 `updated_at` 自动维护;messages 插入后联动刷新所属 conversations 的 `updated_at`(security definer)。
+- 触发器:全部表 `updated_at` 自动维护;messages 插入后联动刷新所属 conversations 的 `updated_at`(security definer);`auth.users` 新增用户时 `handle_new_user`(security definer)自动创建 profiles 与默认 spaces,`on conflict do nothing` 配合 003 唯一索引保证幂等且防并发重复。
 - 索引:`projects(user_id, updated_at desc)`、`conversations(user_id, updated_at desc)`、`messages(conversation_id, created_at)`。
 
 ## 4. 前端数据访问与演示模式
@@ -146,3 +150,4 @@
 
 - `app/backend/scripts/e2e_verify.py`:注册/登录、默认空间、项目落库、模板/社区读取、收藏、跨用户隔离与越权更新拦截。
 - `app/backend/scripts/test_transcribe.py`:登录态调用转写函数,验证 `scribe_v2` 模型与转写文本(HTTP 200,约 2.3s)。
+- `app/frontend/t7-workspace-regression.mjs`(浏览器回归):新账号注册 → 默认工作区自动就绪(触发器)→ 新会话 AI 生成落库(space_id 归属默认工作区)→ 新建工作区自动切换且会话隔离(服务端核验 0 会话)→ 切回默认工作区会话恢复 → 刷新后工作区与会话恢复,16 项断言全部通过。

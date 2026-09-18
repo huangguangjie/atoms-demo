@@ -144,6 +144,7 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let sawDone = false;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -156,13 +157,19 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
       const payload = trimmed.slice(5).trim();
       if (!payload || payload === '[DONE]') continue;
       try {
-        options.onEvent(JSON.parse(payload) as AgentEvent);
+        const event = JSON.parse(payload) as AgentEvent;
+        if (event.type === 'done') sawDone = true;
+        options.onEvent(event);
       } catch {
         // 忽略无法解析的流分片
       }
     }
   }
-  options.onEvent({ type: 'done', stopped: false });
+  // 服务端(含软超时收尾分支)总会以 done 结束;流结束却未收到 done,
+  // 说明连接被异常截断(如平台超时回收),必须以真实错误透出,不允许静默当作成功
+  if (!sawDone && !options.signal.aborted) {
+    throw new Error('AI 生成连接中断,请重试');
+  }
 }
 
 // ---------------------------------------------------------------------------
