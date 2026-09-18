@@ -66,7 +66,16 @@
 
 ### 4.2 Edge Function 分支(已部署并实测通过)
 
-`src/lib/agent.ts` 优先调用已部署的 `app_atoms_agent_generate` Edge Function(地址由 `src/lib/supabase.ts` 提供):服务端经平台 AI 网关调用 `deepseek-v4-flash [gentxt]` 生成单文件 HTML(速度快,确保在平台约 150s wall-clock 时限内完整产出;此前 claude-opus-5 复杂需求下超时截断),密钥仅存于 Supabase Edge Function Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有任何第三方密钥;请求携带 JWT 时由服务端校验登录态。函数以 SSE 返回与演示模式一致的事件协议(`message`、`plan`、`step-start/step-done`、`code-start`、`code-delta`、`app`、`done`、`error`),生成完成后前端照常落库项目。错误策略:Supabase 已配置时调用失败会通过 `error` 事件把真实原因透出到对话流,不再静默回退演示智能体(避免兜底掩盖线上故障);服务端内置 140s 软超时,超时/流中断/HTML 不完整时主动发送 `error` + `done` 收尾,客户端流结束却未收到 `done` 也会抛出「AI 生成连接中断」,错误信息同样如实落库到助手消息(历史回放可见真实失败原因);仅本地未配置 Supabase 时才使用内置演示智能体。端到端验证脚本:`app/backend/scripts/test_agent_e2e.py`(登录态 SSE 生成,断言 message/plan/app 事件与 HTML 产出)。
+`src/lib/agent.ts` 优先调用已部署的 `app_atoms_agent_generate` Edge Function(地址由 `src/lib/supabase.ts` 提供):服务端经平台 AI 网关调用 `deepseek-v4-flash [gentxt]` 生成单文件 HTML(速度快,确保在平台约 150s wall-clock 时限内完整产出;此前 claude-opus-5 复杂需求下超时截断),密钥仅存于 Supabase Edge Function Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有任何第三方密钥;请求携带 JWT 时由服务端校验登录态。函数以 SSE 返回与演示模式一致的事件协议(`message`、`plan`、`step-start/step-done`、`code-start`、`code-delta`、`app`、`done`、`error`),生成完成后前端照常落库项目。
+
+**T9 提示词管线(意图识别 + 布局规划,已部署并实测通过):**
+
+1. **意图识别**(确定性规则 `analyzeIntent`):提炼应用类型(游戏/数据展示/工具/内容/落地页)、内容分区(应用介绍/主功能区/说明文档)、关键功能(键盘操控、得分统计、增删改、数据可视化、本地留存等);对简短模糊需求注入默认假设(补全常规交互、空状态与示例数据)。
+2. **布局规划**:独立小调用(非流式 `PLAN_SYSTEM`,500 tokens、15s 预算)产出恰好 5 步的 JSON 计划——必须包含布局结构与 Flex/Grid 策略(多分区写明桌面横排/≤900px 纵向堆叠)、视觉规范(统一间距刻度 8/12/16/24、圆角 8-16px、卡片边框+阴影分层)、关键交互与响应式交付;超时或解析失败自动回退本地启发式计划(`fallbackSteps`,同样覆盖布局与视觉规范),规划失败不阻断生成。
+3. **代码生成**(`CODE_SYSTEM` 布局工程硬约束):页面级结构禁用绝对/固定定位,绝对定位仅限有明确边界的局部浮层且父容器必须 `position:relative`;多内容分区按既定布局用 flex/grid 分栏为独立卡片、顶部对齐、间距一致;间距用统一刻度(8/12/16/24px)、圆角统一(8-16px),层级用背景/边框/阴影区分;@media 移动端适配必做,canvas 类定宽元素 `max-width:100%`,可点元素不小于 40px;正文禁止出现井号/星号/三反引号等 Markdown 原始符号。意图识别结论、布局指令与既定计划全部注入用户提示。
+4. **产物净化**(`sanitizeHtml`):剥离代码围栏与前后杂文,仅保留 `<!DOCTYPE html>…</html>` 完整文档,防止原始 Markdown 或说明文字进入预览与落库。
+
+错误策略:Supabase 已配置时调用失败会通过 `error` 事件把真实原因透出到对话流,不再静默回退演示智能体(避免兜底掩盖线上故障);服务端内置 130s 软超时(代码生成与规划调用共享预算),超时/流中断/HTML 不完整时主动发送 `error` + `done` 收尾,客户端流结束却未收到 `done` 也会抛出「AI 生成连接中断」,错误信息同样如实落库到助手消息(历史回放可见真实失败原因);输出不完整(max_tokens 截断)时自动以 180 行精简约束重试一次。仅本地未配置 Supabase 时才使用内置演示智能体。端到端验证脚本:`app/backend/scripts/test_agent_e2e.py`(登录态 SSE 生成,断言 message/plan/app 事件与 HTML 产出)、`app/backend/scripts/test_t9_baseline.py`(T9 多类型生成质量门槛:纯 HTML 文档、Flex/Grid 布局、@media 响应式、plan 含布局与视觉规范、SSE 事件完整)。
 
 ### 4.3 认证与会话联动
 
