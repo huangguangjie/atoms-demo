@@ -179,7 +179,14 @@ export async function runAgent(options: RunAgentOptions): Promise<void> {
         options.onEvent({ type: 'done', stopped: true });
         return;
       }
-      console.warn('[agent] Edge Function 调用失败,回退到本地演示智能体:', error);
+      // Supabase 已配置时必须暴露真实报错,不允许静默回退演示智能体
+      // (否则线上问题只会被演示剧本掩盖,永远无法定位根因)
+      console.error('[agent] Edge Function 调用失败:', error);
+      options.onEvent({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return;
     }
   }
   await runDemoAgent(options);

@@ -77,7 +77,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const load = () =>
       fetchRecentConversations(uid)
         .then(setConversations)
-        .catch(() => setConversations([]));
+        .catch((error) => {
+          console.error('[sidebar] 读取最近对话失败:', error);
+          setConversations([]);
+        });
     load();
     // 首页新建/更新对话后自动刷新最近列表
     window.addEventListener('atoms:conversations-updated', load);

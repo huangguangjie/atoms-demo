@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 import {
   demoProfile,
   demoSpace,
@@ -51,20 +52,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isSupabaseConfigured);
 
   const loadUserData = useCallback(async (user: User) => {
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
-    setProfile((existing as Profile) ?? null);
+    try {
+      const { data: existing, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profileError) {
+        throw new Error(`读取用户资料失败:${profileError.message}`);
+      }
+      setProfile((existing as Profile) ?? null);
 
-    const displayName = displayNameOf(user);
-    const userSpaces = await ensureProfileAndSpace(user.id, user.email ?? '', displayName);
-    setSpaces(userSpaces);
-    setCurrentSpaceState((prev) => {
-      if (prev && userSpaces.some((s) => s.id === prev.id)) return prev;
-      return userSpaces.find((s) => s.is_default) ?? userSpaces[0] ?? null;
-    });
+      const displayName = displayNameOf(user);
+      const userSpaces = await ensureProfileAndSpace(user.id, user.email ?? '', displayName);
+      setSpaces(userSpaces);
+      setCurrentSpaceState((prev) => {
+        if (prev && userSpaces.some((s) => s.id === prev.id)) return prev;
+        return userSpaces.find((s) => s.is_default) ?? userSpaces[0] ?? null;
+      });
+    } catch (error) {
+      // 资料初始化失败必须暴露真实报错,避免静默导致后续建对话/建项目连锁失败
+      console.error('[auth] 加载用户数据失败:', error);
+      toast.error(error instanceof Error ? error.message : '用户数据加载失败,请刷新重试');
+    }
   }, []);
 
   useEffect(() => {

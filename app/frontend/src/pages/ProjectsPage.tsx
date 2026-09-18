@@ -45,7 +45,11 @@ export default function ProjectsPage() {
     setFetching(true);
     fetchProjects(userId, tab === 'favorites')
       .then(setProjects)
-      .catch(() => setProjects([]))
+      .catch((error) => {
+        console.error('[projects] 读取项目失败:', error);
+        toast.error(error instanceof Error ? error.message : '读取项目列表失败');
+        setProjects([]);
+      })
       .finally(() => setFetching(false));
   }, [userId, tab]);
 
@@ -61,9 +65,13 @@ export default function ProjectsPage() {
   }, [load]);
 
   const handleFavorite = async (project: Project) => {
-    await toggleProjectFavorite(project);
-    toast.success(project.favorite ? '已取消收藏' : '已收藏');
-    void load();
+    try {
+      await toggleProjectFavorite(project);
+      toast.success(project.favorite ? '已取消收藏' : '已收藏');
+      void load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '收藏操作失败,请重试');
+    }
   };
 
   const handleOpen = (project: Project) => {

@@ -263,7 +263,7 @@ function pickAvatarColor(seed: string): string {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
-/** 确保当前用户存在 profile 与默认空间,返回空间列表 */
+/** 确保当前用户存在 profile 与默认空间,返回空间列表;失败时抛出真实报错(不静默吞掉) */
 export async function ensureProfileAndSpace(
   userId: string,
   email: string,
@@ -271,31 +271,43 @@ export async function ensureProfileAndSpace(
 ): Promise<Space[]> {
   if (!isSupabaseConfigured) return [demoSpace];
 
-  const { data: existingProfile } = await supabase
+  const { data: existingProfile, error: profileQueryError } = await supabase
     .from('profiles')
     .select('id')
     .eq('id', userId)
     .maybeSingle();
+  if (profileQueryError) {
+    throw new Error(`读取用户资料失败:${profileQueryError.message}`);
+  }
 
   if (!existingProfile) {
-    await supabase.from('profiles').insert({
+    const { error: profileInsertError } = await supabase.from('profiles').insert({
       id: userId,
       display_name: displayName,
       email,
       avatar_color: pickAvatarColor(userId),
     });
-    await supabase.from('spaces').insert({
+    if (profileInsertError) {
+      throw new Error(`初始化用户资料失败:${profileInsertError.message}`);
+    }
+    const { error: spaceInsertError } = await supabase.from('spaces').insert({
       owner_id: userId,
       name: `${displayName} 的 Atoms`,
       is_default: true,
     });
+    if (spaceInsertError) {
+      throw new Error(`初始化默认空间失败:${spaceInsertError.message}`);
+    }
   }
 
-  const { data: spaces } = await supabase
+  const { data: spaces, error: spacesError } = await supabase
     .from('spaces')
     .select('*')
     .eq('owner_id', userId)
     .order('is_default', { ascending: false });
+  if (spacesError) {
+    throw new Error(`读取空间列表失败:${spacesError.message}`);
+  }
 
   return (spaces as Space[]) ?? [];
 }
@@ -306,20 +318,24 @@ export async function fetchRecentConversations(userId: string): Promise<Conversa
       .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
       .slice(0, 8);
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('conversations')
     .select('*')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
     .limit(8);
+  if (error) {
+    throw new Error(`读取最近对话失败:${error.message}`);
+  }
   return (data as Conversation[]) ?? [];
 }
 
+/** 创建对话;Supabase 报错(RLS/外键/网络)原样抛出,由调用方展示真实原因 */
 export async function createConversation(
   userId: string,
   spaceId: string | null,
   title: string,
-): Promise<Conversation | null> {
+): Promise<Conversation> {
   if (!isSupabaseConfigured) {
     const conversation: Conversation = {
       id: demoId('conv'),
@@ -331,12 +347,15 @@ export async function createConversation(
     demoConversations = [conversation, ...demoConversations];
     return conversation;
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('conversations')
     .insert({ user_id: userId, space_id: spaceId, title })
     .select()
     .single();
-  return data as Conversation | null;
+  if (error) {
+    throw new Error(`创建对话失败:${error.message}`);
+  }
+  return data as Conversation;
 }
 
 export async function insertMessage(
@@ -351,7 +370,12 @@ export async function insertMessage(
     ];
     return;
   }
-  await supabase.from('messages').insert({ conversation_id: conversationId, role, content });
+  const { error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: conversationId, role, content });
+  if (error) {
+    throw new Error(`消息写入失败:${error.message}`);
+  }
 }
 
 /** 拉取某个对话的全部消息(按时间正序),供最近对话联动回放 */
@@ -359,11 +383,14 @@ export async function fetchConversationMessages(conversationId: string): Promise
   if (!isSupabaseConfigured) {
     return demoMessages.filter((m) => m.conversation_id === conversationId);
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('messages')
     .select('*')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true });
+  if (error) {
+    throw new Error(`读取对话消息失败:${error.message}`);
+  }
   return (data as Message[]) ?? [];
 }
 
@@ -397,8 +424,11 @@ export async function createProject(input: CreateProjectInput): Promise<Project 
     demoProjects = [project, ...demoProjects];
     return project;
   }
-  const { data } = await supabase.from('projects').insert(row).select().single();
-  return data as Project | null;
+  const { data, error } = await supabase.from('projects').insert(row).select().single();
+  if (error) {
+    throw new Error(`创建项目失败:${error.message}`);
+  }
+  return data as Project;
 }
 
 export async function fetchProjects(userId: string, favoriteOnly: boolean): Promise<Project[]> {
@@ -409,7 +439,10 @@ export async function fetchProjects(userId: string, favoriteOnly: boolean): Prom
   }
   let query = supabase.from('projects').select('*').eq('user_id', userId);
   if (favoriteOnly) query = query.eq('favorite', true);
-  const { data } = await query.order('updated_at', { ascending: false });
+  const { data, error } = await query.order('updated_at', { ascending: false });
+  if (error) {
+    throw new Error(`读取项目列表失败:${error.message}`);
+  }
   return (data as Project[]) ?? [];
 }
 
@@ -420,7 +453,13 @@ export async function toggleProjectFavorite(project: Project): Promise<void> {
     );
     return;
   }
-  await supabase.from('projects').update({ favorite: !project.favorite }).eq('id', project.id);
+  const { error } = await supabase
+    .from('projects')
+    .update({ favorite: !project.favorite })
+    .eq('id', project.id);
+  if (error) {
+    throw new Error(`更新收藏状态失败:${error.message}`);
+  }
 }
 
 export const COMMUNITY_CATEGORIES = [
