@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>番茄工作法 · 从原理到实践</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1f2933;--sub:#5c6770;--line:#e4e8ed;--brand:#e0523c;--brand-d:#bc3621;--soft:#fdeeea}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.75;-webkit-font-smoothing:antialiased}
+.wrap{max-width:920px;margin:0 auto;padding:24px 16px 40px;display:flex;flex-direction:column;gap:16px}
+.hero{background:linear-gradient(135deg,#e0523c,#b0301d);color:#fff;border-radius:16px;padding:32px 24px;box-shadow:0 12px 28px rgba(180,55,35,.2)}
+.hero .tag{display:inline-block;font-size:12px;letter-spacing:.08em;background:rgba(255,255,255,.18);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+.hero h1{font-size:clamp(24px,4vw,34px);line-height:1.3}
+.hero p{margin-top:8px;color:rgba(255,255,255,.9);max-width:58ch}
+.hero nav{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.hero nav a{color:#fff;text-decoration:none;font-size:14px;padding:8px 16px;border-radius:999px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);min-height:40px;display:flex;align-items:center;transition:.2s}
+.hero nav a:hover,.hero nav a.on{background:#fff;color:var(--brand-d);border-color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px;box-shadow:0 2px 10px rgba(31,41,51,.05);scroll-margin-top:16px}
+.card h2{font-size:20px;display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.card h2::before{content:"";width:5px;height:20px;border-radius:3px;background:var(--brand)}
+.lead{color:var(--sub);margin-bottom:16px}
+ul.points{list-style:none;display:grid;gap:12px}
+ul.points li{position:relative;padding-left:22px}
+ul.points li::before{content:"";position:absolute;left:2px;top:11px;width:7px;height:7px;border-radius:50%;background:var(--brand)}
+ul.points b{color:var(--brand-d)}
+.steps{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.step{display:flex;gap:12px;background:var(--soft);border:1px solid #f7d9d2;border-radius:12px;padding:14px}
+.step .num{flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.step h3{font-size:15px;margin-bottom:2px}
+.step p{font-size:14px;color:var(--sub);line-height:1.6}
+details{background:#fafbfc;border:1px solid var(--line);border-radius:12px;padding:0 16px;transition:.2s}
+details[open]{background:#fff;box-shadow:0 2px 10px rgba(31,41,51,.06)}
+details+details{margin-top:8px}
+summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:10px 0;font-weight:600;cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"＋";color:var(--brand);font-weight:700;font-size:16px}
+details[open] summary::after{content:"－"}
+.ans{padding:0 0 14px;color:var(--sub);font-size:14.5px}
+footer{text-align:center;color:#8b949e;font-size:13px;padding:8px 0}
+@media(max-width:900px){.steps{grid-template-columns:1fr}}
+@media(max-width:560px){.card{padding:18px}.hero{padding:24px 18px}.hero nav a{flex:1 1 auto;justify-content:center}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="tag">专注力训练</span>
+    <h1>番茄工作法</h1>
+    <p>把一大团待办拆成一个个 25 分钟的时间盒子，专注做完一件、休息一会儿，再进入下一轮。它不靠意志力硬撑，而是靠节奏让注意力可持续。</p>
+    <nav>
+      <a href="#principle">方法原理</a>
+      <a href="#steps">使用步骤</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+  </header>
+
+  <main style="display:flex;flex-direction:column;gap:16px">
+
+    <section class="card" id="principle">
+      <h2>方法原理</h2>
+      <p class="lead">由弗朗西斯科·西里洛在二十世纪八十年代末提出，因为最初使用的是一只番茄形状的厨房计时器而得名。它的核心不是计时本身，而是主动管理注意力的方式。</p>
+      <ul class="points">
+        <li><b>时间盒子：</b>把工作装进固定长度（默认 25 分钟）的盒子里，边界清晰，开始的心理阻力远低于“做完为止”。</li>
+        <li><b>单一任务：</b>一个番茄钟内只推进一件事，减少任务切换带来的注意力损耗。</li>
+        <li><b>强制休息：</b>短暂休息让大脑恢复，避免长时间硬撑导致的效率骤降。</li>
+        <li><b>可计量的产出：</b>一个番茄钟就是一个进度单位，便于估算任务耗时、回顾当天真实投入。</li>
+        <li><b>弹性调整：</b>25 分钟只是默认值，可结合自身节奏在 15 至 45 分钟之间设定。</li>
+      </ul>
+    </section>
+
+    <section class="card" id="steps">
+      <h2>使用步骤</h2>
+      <p class="lead">完整的一轮包含四个动作，重复四轮之后安排一次较长的休息。</p>
+      <div class="steps">
+        <div class="step"><span class="num">1</span><div><h3>列出今日任务</h3><p>把今天要做的事逐条写下，并为每条预估需要几个番茄钟。</p></div></div>
+        <div class="step"><span class="num">2</span><div><h3>启动计时开始专注</h3><p>设定 25 分钟，只做选中的那一件事，不切页面、不看消息。</p></div></div>
+        <div class="step"><span class="num">3</span><div><h3>遇到干扰先记下</h3><p>手边放一张纸，想到别的事就快速写下来，等本轮结束再统一处理。</p></div></div>
+        <div class="step"><span class="num">4</span><div><h3>打勾休息再循环</h3><p>计时结束打一个勾，休息 5 分钟；满四个番茄钟后休息 15 至 30 分钟。</p></div></div>
+      </div>
+    </section>
+
+    <section class="card" id="faq">
+      <h2>常见问题</h2>
+      <p class="lead">初学者最常遇到的几个困惑，点击问题即可展开查看。</p>
+      <details open>
+        <summary>25 分钟必须固定吗？</summary>
+        <p class="ans">不必。刚开始专注力较弱时，可以先从 15 分钟起步，适应后再延长到 25 分钟。关键是长度一旦定下来，就连续用一两周再评估，频繁改动反而会打乱节奏。</p>
+      </details>
+      <details>
+        <summary>专注中途被打断怎么办？</summary>
+        <p class="ans">如果是自己想到别的事，写在纸上继续做手头的任务；如果是必须立刻处理的外部打扰，就作废这一轮，处理完重新计时，不要一边应付一边硬撑。</p>
+      </details>
+      <details>
+        <summary>一个任务要八个番茄钟才能做完怎么办？</summary>
+        <p class="ans">说明任务颗粒度太大了。把它拆成几个子任务，每个控制在四到六个番茄钟以内，这样进度看得见，也更容易安排休息。</p>
+      </details>
+      <details>
+        <summary>休息时间应该做什么？</summary>
+        <p class="ans">起身走动、喝水、看看远处或闭眼放松都很好。尽量不要刷短视频或回消息，这类活动会持续占用注意力，下一轮很难再收回来。</p>
+      </details>
+      <details>
+        <summary>记录番茄钟数量有什么意义？</summary>
+        <p class="ans">它是你真实投入的刻度。积累一段时间后，你会发现写一份报告差不多需要三个番茄钟，于是对工期和日程的判断会越来越准。</p>
+      </details>
+      <details>
+        <summary>工作节奏很碎、随时要响应怎么办？</summary>
+        <p class="ans">挑出一天中打扰最少的时段集中使用这套方法，其余时间正常响应。哪怕每天只有一个完整的番茄钟，也比整天空转更有获得感。</p>
+      </details>
+    </section>
+
+  </main>
+
+  <footer>番茄工作法 · 内容整理自公开资料，仅作学习与效率实践参考</footer>
+</div>
+
+<script>
+var links=[].slice.call(document.querySelectorAll('.hero nav a'));
+var sections=[].slice.call(document.querySelectorAll('main section'));
+if('IntersectionObserver' in window){
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){l.classList.toggle('on',l.getAttribute('href')==='#'+e.target.id);});
+      }
+    });
+  },{rootMargin:'-35% 0px -55% 0px'});
+  sections.forEach(function(s){io.observe(s);});
+}
+</script>
+</body>
+</html>

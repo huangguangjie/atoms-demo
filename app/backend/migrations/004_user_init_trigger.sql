@@ -19,7 +19,7 @@ begin
     ),
     coalesce(new.email, ''),
     (array['bg-violet-500','bg-blue-500','bg-emerald-500','bg-amber-500','bg-rose-500','bg-cyan-500'])
-      [1 + (hashtext(new.id::text) % 6)]
+      [1 + ((hashtext(new.id::text) & 2147483647) % 6)]
   )
   on conflict (id) do nothing;
 

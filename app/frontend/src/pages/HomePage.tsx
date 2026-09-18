@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowUp,
+  AudioLines,
+  ChevronDown,
   ChevronRight,
-  Database,
-  Figma,
-  Globe,
   Hammer,
   Hash,
   MessageSquarePlus,
-  Mic,
+  Paperclip,
+  Palette,
   Plus,
   Sparkles,
   Square,
@@ -33,6 +33,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -126,7 +127,7 @@ export default function HomePage() {
   const [mcpServers, setMcpServers] = useState<McpServer[]>(loadMcpServers);
   const [mcpName, setMcpName] = useState('');
   const [mcpUrl, setMcpUrl] = useState('');
-  const [showConnectStrip, setShowConnectStrip] = useState(true);
+  const [noticeOpen, setNoticeOpen] = useState(true);
   const connectedCount = mcpServers.filter((s) => s.connected).length;
 
   // 底部快捷区
@@ -554,9 +555,9 @@ export default function HomePage() {
   // 输入区(欢迎页与对话页共用)
   // -------------------------------------------------------------------------
   const inputCard = (
-    <div className="rounded-2xl border bg-card shadow-sm">
+    <div className="rounded-3xl border border-border/70 bg-card/90 shadow-xl shadow-black/5 backdrop-blur focus-within:border-ring">
       {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-b px-3 pt-3">
+        <div className="flex flex-wrap gap-2 px-4 pt-3">
           {attachments.map((name, index) => (
             <span
               key={`${name}-${index}`}
@@ -583,11 +584,11 @@ export default function HomePage() {
             void handleSend();
           }
         }}
-        placeholder="描述你想要构建的应用,例如:做一个记录阅读进度的小站…"
+        placeholder="@David 进行数据开发。"
         rows={3}
-        className="w-full resize-none bg-transparent px-4 pt-4 text-sm outline-none placeholder:text-muted-foreground"
+        className="w-full resize-none bg-transparent px-5 pt-4 text-sm outline-none placeholder:text-muted-foreground"
       />
-      <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
+      <div className="flex items-center gap-2 px-3 pb-3 pt-1">
         <input
           ref={fileInputRef}
           type="file"
@@ -598,66 +599,24 @@ export default function HomePage() {
             e.target.value = '';
           }}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-full text-muted-foreground"
-          onClick={() => fileInputRef.current?.click()}
-          title="添加附件"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
-
-        {/* 主题切换 */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground">
-              <Globe className="h-3.5 w-3.5" />
-              <span className="text-xs">{theme}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">生成应用主题</DropdownMenuLabel>
-            {THEME_OPTIONS.map((option) => (
-              <DropdownMenuItem key={option} onClick={() => setTheme(option)}>
-                {option}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* 构建/目标模式切换 */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground">
-              {mode === 'build' ? <Hammer className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
-              <span className="text-xs">{BUILD_MODES.find((m) => m.key === mode)?.label}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {BUILD_MODES.map((item) => (
-              <DropdownMenuItem key={item.key} onClick={() => setMode(item.key)}>
-                <item.icon className="h-3.5 w-3.5" />
-                <span>{item.label}</span>
-                <span className="ml-2 text-xs text-muted-foreground">{item.desc}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* # 引用功能 */}
+        {/* 添加:收纳附件上传、# 引用与 MCP 连接入口,工具栏与参考图保持一致 */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-full text-muted-foreground"
-              title="引用文件/位置/关键信息"
+              className="h-9 w-9 rounded-full border border-border/80 text-foreground/80 hover:bg-muted"
+              title="添加附件、引用与工具"
             >
-              <Hash className="h-4 w-4" />
+              <Plus className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+              <Paperclip className="h-3.5 w-3.5" />
+              上传附件
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">引用到提示词</DropdownMenuLabel>
             {HASH_OPTIONS.map((option) => (
               <DropdownMenuItem key={option} onClick={() => setPrompt((prev) => `${prev}#${option} `)}>
@@ -665,27 +624,87 @@ export default function HomePage() {
                 {option}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setMcpOpen(true)}>
+              <Terminal className="h-3.5 w-3.5" />
+              连接 MCP 工具
+              {connectedCount > 0 && (
+                <span className="ml-auto rounded-full bg-emerald-100 px-1.5 text-[10px] font-medium text-emerald-700">
+                  已连 {connectedCount}
+                </span>
+              )}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        {/* 主题切换 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 gap-1.5 rounded-xl border border-border/80 px-3 text-foreground/80 hover:bg-muted"
+            >
+              <Palette className="h-3.5 w-3.5" />
+              <span className="text-xs">主题</span>
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">生成应用主题</DropdownMenuLabel>
+            {THEME_OPTIONS.map((option) => (
+              <DropdownMenuItem key={option} onClick={() => setTheme(option)}>
+                {option}
+                {theme === option && <span className="ml-auto text-xs text-violet-500">✓</span>}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="ml-auto flex items-center gap-2">
+          {/* 构建/目标模式切换 */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 gap-1.5 rounded-xl border border-border/80 px-3 text-foreground/80 hover:bg-muted"
+              >
+                {mode === 'build' ? <Hammer className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
+                <span className="text-xs">{BUILD_MODES.find((m) => m.key === mode)?.label}</span>
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {BUILD_MODES.map((item) => (
+                <DropdownMenuItem key={item.key} onClick={() => setMode(item.key)}>
+                  <item.icon className="h-3.5 w-3.5" />
+                  <span>{item.label}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{item.desc}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"
             className={cn(
-              'h-8 w-8 rounded-full',
-              listening ? 'bg-rose-100 text-rose-600' : 'text-muted-foreground',
+              'h-9 w-9 rounded-full',
+              listening
+                ? 'animate-pulse bg-rose-500 text-white hover:bg-rose-600'
+                : 'bg-muted text-foreground/80 hover:bg-muted',
             )}
             onClick={() => (listening ? stopVoice() : void startVoice())}
             disabled={transcribing}
             title={transcribing ? '正在转写语音…' : '语音输入'}
           >
-            <Mic className="h-4 w-4" />
+            <AudioLines className="h-4 w-4" />
           </Button>
           {generating ? (
             <Button
               size="icon"
-              className="h-8 w-8 rounded-full bg-rose-500 text-white hover:bg-rose-600"
+              className="h-9 w-9 rounded-full bg-rose-500 text-white hover:bg-rose-600"
               onClick={handleStop}
               title="停止生成"
             >
@@ -694,7 +713,8 @@ export default function HomePage() {
           ) : (
             <Button
               size="icon"
-              className="h-8 w-8 rounded-full bg-foreground text-background hover:bg-foreground/90"
+              className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90"
+              disabled={!prompt.trim()}
               onClick={() => void handleSend()}
               title="发送"
             >
@@ -707,50 +727,26 @@ export default function HomePage() {
   );
 
   // -------------------------------------------------------------------------
-  // MCP 连接条(对话页与欢迎页共用)
-  // -------------------------------------------------------------------------
-  const mcpStrip = showConnectStrip && (
-    <div className="mt-3 flex items-center justify-between rounded-xl border bg-muted/40 px-3 py-2">
-      <button
-        type="button"
-        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-        onClick={() => setMcpOpen(true)}
-      >
-        <Terminal className="h-3.5 w-3.5" />
-        将你的工具连接到 Atoms
-        {connectedCount > 0 && (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-            已连接 {connectedCount} 个服务
-          </span>
-        )}
-      </button>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Database className="h-3.5 w-3.5" />
-        <Figma className="h-3.5 w-3.5" />
-        <Globe className="h-3.5 w-3.5" />
-        <button
-          type="button"
-          aria-label="关闭连接提示"
-          onClick={() => setShowConnectStrip(false)}
-          className="rounded p-0.5 hover:bg-background"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-    </div>
-  );
-
-  // -------------------------------------------------------------------------
   // 欢迎视图(未开始对话)
   // -------------------------------------------------------------------------
   const welcomeView = (
     <div className="flex min-h-full flex-col">
-      <div className="flex justify-center pt-4">
-        <div className="flex items-center gap-2 rounded-full bg-muted px-4 py-1.5 text-xs text-muted-foreground">
-          <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-          Atoms 更新:智能体分步计划、实时预览与全新首页
+      {noticeOpen && (
+        <div className="flex justify-center pt-4">
+          <div className="flex items-center gap-2 rounded-full bg-muted px-4 py-1.5 text-xs text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+            Atoms 更新:智能体分步计划、实时预览与全新首页
+            <button
+              type="button"
+              aria-label="关闭公告"
+              onClick={() => setNoticeOpen(false)}
+              className="rounded-full p-0.5 hover:bg-background"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-1 flex-col items-center justify-center px-6 pt-10">
         <div className="mb-6 flex -space-x-2">
@@ -769,9 +765,8 @@ export default function HomePage() {
         <h1 className="text-center text-3xl font-bold tracking-tight md:text-4xl">
           你的下一个产品从这里开始,{displayName}。
         </h1>
-        <div className="mt-8 w-full max-w-2xl">
+        <div className="mt-8 w-full max-w-3xl">
           {inputCard}
-          {mcpStrip}
         </div>
       </div>
 
@@ -837,7 +832,6 @@ export default function HomePage() {
       <div className="shrink-0 px-4 pb-4">
         <div className="mx-auto max-w-2xl">
           {inputCard}
-          {mcpStrip}
         </div>
       </div>
     </div>
