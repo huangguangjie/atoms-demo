@@ -31,6 +31,8 @@ export interface Project {
   cover_gradient: string;
   cover_emoji: string;
   views: number;
+  /** 生成的单文件应用 HTML,项目预览回放用 */
+  app_html?: string | null;
 }
 
 export interface Conversation {
@@ -285,6 +287,8 @@ export interface CreateProjectInput {
   source: ProjectSource;
   coverGradient?: string;
   coverEmoji?: string;
+  /** 生成的单文件应用 HTML(智能体生成/克隆魔改时落库,支持项目预览回放) */
+  appHtml?: string;
 }
 
 export async function createProject(input: CreateProjectInput): Promise<Project | null> {
@@ -298,6 +302,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project 
     cover_gradient: input.coverGradient ?? randomGradient(),
     cover_emoji: input.coverEmoji ?? '📦',
     views: 0,
+    ...(input.appHtml ? { app_html: input.appHtml } : {}),
   };
   if (!isSupabaseConfigured) {
     const project: Project = { id: demoId('proj'), ...row };

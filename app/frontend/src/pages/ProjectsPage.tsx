@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Database, Heart, Sparkles } from 'lucide-react';
+import { Database, Heart, PlayCircle, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import AppPreview from '@/components/preview/AppPreview';
+import type { DemoApp } from '@/lib/demo-apps';
 import { fetchProjects, toggleProjectFavorite, type Project } from '@/lib/supabase';
 
 const SOURCE_LABEL: Record<Project['source'], string> = {
@@ -12,11 +21,22 @@ const SOURCE_LABEL: Record<Project['source'], string> = {
   template: '模板',
 };
 
+/** 项目卡片点击后的预览回放应用 */
+function projectToDemoApp(project: Project): DemoApp {
+  const html = project.app_html || '<!doctype html><html><body style="font-family:system-ui;padding:40px;color:#333"><h1>该项目尚未生成应用内容</h1><p>回到首页输入需求,让智能体生成应用后会自动保存到这里。</p></body></html>';
+  return {
+    title: project.name,
+    kind: 'notes',
+    files: [{ name: 'index.html', content: html, language: 'html' }],
+  };
+}
+
 export default function ProjectsPage() {
   const { user, loading, demoMode } = useAuth();
   const [tab, setTab] = useState<'all' | 'favorites'>('all');
   const [projects, setProjects] = useState<Project[]>([]);
   const [fetching, setFetching] = useState(true);
+  const [previewing, setPreviewing] = useState<Project | null>(null);
 
   const userId = user?.id ?? (demoMode ? 'demo-user' : '');
 
@@ -44,6 +64,14 @@ export default function ProjectsPage() {
     await toggleProjectFavorite(project);
     toast.success(project.favorite ? '已取消收藏' : '已收藏');
     void load();
+  };
+
+  const handleOpen = (project: Project) => {
+    if (project.app_html) {
+      setPreviewing(project);
+    } else {
+      toast.info(`「${project.name}」暂无应用内容,回到首页生成后会自动保存到这里`);
+    }
   };
 
   return (
@@ -96,25 +124,43 @@ export default function ProjectsPage() {
               key={project.id}
               className="group overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md"
             >
-              <div
+              <button
+                type="button"
+                onClick={() => handleOpen(project)}
                 className={cn(
-                  'relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br text-5xl',
+                  'relative flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br text-5xl',
                   project.cover_gradient,
                 )}
               >
                 {project.cover_emoji}
-                <button
-                  type="button"
+                {project.app_html && (
+                  <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                    <PlayCircle className="h-3 w-3" />
+                    预览
+                  </span>
+                )}
+                <span
+                  role="button"
                   aria-label={project.favorite ? '取消收藏' : '收藏'}
-                  onClick={() => void handleFavorite(project)}
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleFavorite(project);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      void handleFavorite(project);
+                    }
+                  }}
                   className={cn(
                     'absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow-sm transition-transform hover:scale-110',
                     project.favorite ? 'text-rose-500' : 'text-muted-foreground',
                   )}
                 >
                   <Heart className={cn('h-3.5 w-3.5', project.favorite && 'fill-current')} />
-                </button>
-              </div>
+                </span>
+              </button>
               <div className="space-y-1.5 p-3">
                 <div className="truncate text-sm font-medium">{project.name}</div>
                 {project.description && (
@@ -134,6 +180,17 @@ export default function ProjectsPage() {
           ))}
         </div>
       )}
+
+      {/* 项目预览回放:点击有应用内容的项目卡片时打开 */}
+      <Dialog open={Boolean(previewing)} onOpenChange={(v) => !v && setPreviewing(null)}>
+        <DialogContent className="h-[85vh] max-w-4xl overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{previewing?.name} 预览</DialogTitle>
+            <DialogDescription>项目应用的实时预览与源码查看</DialogDescription>
+          </DialogHeader>
+          {previewing && <AppPreview app={projectToDemoApp(previewing)} onClose={() => setPreviewing(null)} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
