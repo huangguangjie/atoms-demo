@@ -258,7 +258,16 @@ export default function ChatDetailPage() {
       return;
     }
     const assistantId = `assistant-${Date.now()}`;
-    // 首页跳转场景(userInserted)用户消息已落库并由历史加载渲染,本地只追加助手气泡,避免重复
+    // 首页跳转场景(userInserted)用户消息已落库并由历史加载渲染,本地只追加助手气泡,避免重复;
+    // 后续提交(含队列续跑)的用户消息必须真实落库,否则刷新后历史回放缺条目
+    if (!opts?.userInserted) {
+      try {
+        await insertMessage(convId, 'user', text);
+      } catch (error) {
+        console.error('[chat] 用户消息写入失败:', error);
+        toast.error(error instanceof Error ? error.message : '消息写入失败,请重试');
+      }
+    }
     setMessages((prev) => [
       ...prev,
       ...(opts?.userInserted

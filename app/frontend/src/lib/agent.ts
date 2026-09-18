@@ -176,24 +176,42 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
 // 入口:优先 Edge Function,失败或未配置时回退演示智能体
 // ---------------------------------------------------------------------------
 
+/** 判断是否为可自动重试的瞬时故障:流被截断/网络抖动/网关 5xx;4xx 等确定性错误不重试,直接透出 */
+function isTransientAgentError(message: string): boolean {
+  return (
+    message.includes('连接中断')
+    || message.includes('Failed to fetch')
+    || message.includes('NetworkError')
+    || message.includes('network')
+    || /响应异常:5\d{2}/.test(message)
+  );
+}
+
 export async function runAgent(options: RunAgentOptions): Promise<void> {
   if (getSupabaseFunctionUrl(AGENT_FUNCTION_NAME)) {
-    try {
-      await runEdgeAgent(options);
-      return;
-    } catch (error) {
-      if (options.signal.aborted) {
-        options.onEvent({ type: 'done', stopped: true });
+    const MAX_ATTEMPTS = 2; // 瞬时中断自动重试一次,仍失败才向 UI 透出真实错误
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await runEdgeAgent(options);
+        return;
+      } catch (error) {
+        if (options.signal.aborted) {
+          options.onEvent({ type: 'done', stopped: true });
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt < MAX_ATTEMPTS && isTransientAgentError(message)) {
+          console.warn('[agent] 连接瞬时中断,自动重试:', message);
+          options.onEvent({ type: 'message', content: '连接出现瞬时中断,正在自动重试…' });
+          await sleep(1200);
+          continue;
+        }
+        // Supabase 已配置时必须暴露真实报错,不允许静默回退演示智能体
+        // (否则线上问题只会被演示剧本掩盖,永远无法定位根因)
+        console.error('[agent] Edge Function 调用失败:', error);
+        options.onEvent({ type: 'error', message });
         return;
       }
-      // Supabase 已配置时必须暴露真实报错,不允许静默回退演示智能体
-      // (否则线上问题只会被演示剧本掩盖,永远无法定位根因)
-      console.error('[agent] Edge Function 调用失败:', error);
-      options.onEvent({
-        type: 'error',
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return;
     }
   }
   await runDemoAgent(options);

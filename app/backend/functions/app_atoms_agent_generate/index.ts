@@ -343,6 +343,13 @@ Deno.serve(async (req) => {
   let upstream: Response;
   try {
     upstream = await callGateway(userPrompt);
+    // 网关偶发 5xx(如 502):短暂退避后原地重试一次,避免整次生成直接失败
+    if (upstream.status >= 500) {
+      const detail = await upstream.text().catch(() => '');
+      console.warn(JSON.stringify({ requestId, gatewayRetry: true, status: upstream.status, detail: detail.slice(0, 200) }));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      upstream = await callGateway(userPrompt);
+    }
   } catch (error) {
     console.error(requestId, 'AI 网关连接失败', error);
     return new Response(JSON.stringify({ error: 'AI 服务连接失败' }), {
