@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthDialog from '@/components/auth/AuthDialog';
 import AppPreview from '@/components/preview/AppPreview';
-import { buildDemoApp, pickAppTitle, type DemoApp } from '@/lib/demo-apps';
+import TemplatePlaceholderDialog from '@/components/templates/TemplatePlaceholderDialog';
+import { buildDemoApp, pickAppTitle, TEMPLATE_CATEGORY_KIND, type DemoApp } from '@/lib/demo-apps';
 import {
   COMMUNITY_CATEGORIES,
   createProject,
@@ -41,14 +42,21 @@ function appToDemoApp(app: CommunityApp): DemoApp {
   return { ...generated, title: app.title };
 }
 
-/** 模板点击「使用模板」后打开的演示应用 */
-function templateToDemoApp(template: Template): DemoApp {
-  const generated = buildDemoApp(`${template.title} ${template.category}`, '默认');
-  return { ...generated, title: template.title };
+/**
+ * 模板 + 占位值 → 演示应用:按模板分类选择对应应用类型,
+ * 用户填写的占位值会真实注入生成的 HTML。
+ */
+function templateToDemoApp(template: Template, values: Record<string, string>): DemoApp {
+  const kind = TEMPLATE_CATEGORY_KIND[template.category] ?? 'landing';
+  return buildDemoApp(`${template.title} ${template.category}`, '默认', {
+    kind,
+    title: template.title,
+    values,
+  });
 }
 
 export default function ResourcesPage() {
-  const { user, currentSpace, demoMode, uidLabel } = useAuthLabel();
+  const { user, currentSpace, demoMode } = useAuth();
   const [tab, setTab] = useState<'discover' | 'templates'>('discover');
   const [category, setCategory] = useState('全部');
   const [apps, setApps] = useState<CommunityApp[]>([]);
@@ -56,6 +64,8 @@ export default function ResourcesPage() {
   const [loading, setLoading] = useState(true);
   const [authOpen, setAuthOpen] = useState(false);
   const [previewApp, setPreviewApp] = useState<DemoApp | null>(null);
+  const [placeholderTemplate, setPlaceholderTemplate] = useState<Template | null>(null);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -111,26 +121,42 @@ export default function ResourcesPage() {
     }
   };
 
-  /** 使用模板:落成 source=template 的项目(含应用 HTML) */
-  const handleUseTemplate = async (template: Template) => {
+  /** 使用模板:打开占位填写弹窗(未登录先弹登录) */
+  const handleUseTemplate = (template: Template) => {
+    if (!requireAuth()) return;
+    setPlaceholderTemplate(template);
+  };
+
+  /** 占位填写完成后一键生成:占位值真实注入 HTML,落库并直接打开预览 */
+  const handleGenerateFromTemplate = async (
+    template: Template,
+    values: Record<string, string>,
+  ) => {
     const uid = requireAuth();
     if (!uid) return;
-    const generated = templateToDemoApp(template);
-    const project = await createProject({
-      userId: uid,
-      spaceId: currentSpace?.id ?? null,
-      name: `${template.title} 实例`,
-      description: `基于模板 ${template.title} 创建`,
-      source: 'template',
-      coverGradient: template.cover_gradient,
-      coverEmoji: template.cover_emoji,
-      appHtml: generated.files[0].content,
-    });
-    if (project) {
-      toast.success(`已基于「${template.title}」创建项目`);
-      window.dispatchEvent(new Event('atoms:projects-updated'));
-    } else {
-      toast.error('创建项目失败,请重试');
+    setCreatingTemplate(true);
+    try {
+      const generated = templateToDemoApp(template, values);
+      const project = await createProject({
+        userId: uid,
+        spaceId: currentSpace?.id ?? null,
+        name: `${template.title} 实例`,
+        description: `基于模板 ${template.title} 创建(已替换占位内容)`,
+        source: 'template',
+        coverGradient: template.cover_gradient,
+        coverEmoji: template.cover_emoji,
+        appHtml: generated.files[0].content,
+      });
+      if (project) {
+        toast.success(`已基于「${template.title}」创建项目,占位内容已替换`);
+        window.dispatchEvent(new Event('atoms:projects-updated'));
+        setPlaceholderTemplate(null);
+        setPreviewApp(generated);
+      } else {
+        toast.error('创建项目失败,请重试');
+      }
+    } finally {
+      setCreatingTemplate(false);
     }
   };
 
@@ -249,29 +275,40 @@ export default function ResourcesPage() {
         <div className="mt-16 text-center text-sm text-muted-foreground">该分类下暂无模板</div>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4">
-          {templates.map((template) => (
-            <div
-              key={template.id}
-              className="group overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md"
-            >
-              <div className={cn(cardGradient, template.cover_gradient)}>
-                {template.cover_emoji}
-              </div>
-              <div className="space-y-2 p-3">
-                <div className="truncate text-sm font-medium">{template.title}</div>
-                <div className="line-clamp-2 min-h-8 text-xs leading-4 text-muted-foreground">
-                  {template.description}
+          {templates.map((template) => {
+            const placeholders = template.placeholders ?? [];
+            return (
+              <div
+                key={template.id}
+                className="group overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md"
+              >
+                <div className={cn(cardGradient, template.cover_gradient)}>
+                  {template.cover_emoji}
                 </div>
-                <button
-                  type="button"
-                  className="w-full rounded-md bg-foreground px-2 py-1.5 text-[11px] font-medium text-background"
-                  onClick={() => void handleUseTemplate(template)}
-                >
-                  使用模板
-                </button>
+                <div className="space-y-2 p-3">
+                  <div className="truncate text-sm font-medium">{template.title}</div>
+                  <div className="line-clamp-2 min-h-8 text-xs leading-4 text-muted-foreground">
+                    {template.description}
+                  </div>
+                  {placeholders.length > 0 && (
+                    <div className="rounded-md bg-muted/60 px-2 py-1.5 text-[11px] leading-4 text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        占位字段({placeholders.length}):
+                      </span>
+                      {placeholders.map((p) => p.label).join('、')}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="w-full rounded-md bg-foreground px-2 py-1.5 text-[11px] font-medium text-background"
+                    onClick={() => handleUseTemplate(template)}
+                  >
+                    使用模板
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -279,7 +316,7 @@ export default function ResourcesPage() {
       <p className="mt-10 text-center text-xs text-muted-foreground">
         {tab === 'discover'
           ? '发现:来自社区分享的应用,可体验、克隆魔改或自行部署。'
-          : '模板:现成的开发方案,在占位处替换内容即可作为你的应用基础。'}
+          : '模板:点击「使用模板」填写占位内容,一键生成属于你的应用。'}
         {COMMUNITY_CATEGORIES.length > 0 ? '' : ''}
       </p>
 
@@ -294,14 +331,19 @@ export default function ResourcesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* 模板占位填写弹窗:确认后真实注入占位值并创建项目 */}
+      <TemplatePlaceholderDialog
+        template={placeholderTemplate}
+        open={Boolean(placeholderTemplate)}
+        onOpenChange={(v) => !v && setPlaceholderTemplate(null)}
+        onConfirm={(values) => {
+          if (placeholderTemplate) void handleGenerateFromTemplate(placeholderTemplate, values);
+        }}
+        submitting={creatingTemplate}
+      />
+
       {/* 登录弹窗:克隆/使用模板前需要身份 */}
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
     </div>
   );
-}
-
-/** 资源页专用:uidLabel 仅用于触发 useAuth 依赖(保留类型安全) */
-function useAuthLabel() {
-  const auth = useAuth();
-  return { ...auth, uidLabel: auth.user?.id ?? '' };
 }

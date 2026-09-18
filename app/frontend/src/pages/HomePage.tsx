@@ -46,7 +46,8 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatMessage, { type ChatMessageData } from '@/components/chat/ChatMessage';
 import AppPreview from '@/components/preview/AppPreview';
-import { DEMO_KIND_META, buildDemoApp, type DemoApp } from '@/lib/demo-apps';
+import TemplatePlaceholderDialog from '@/components/templates/TemplatePlaceholderDialog';
+import { DEMO_KIND_META, buildDemoApp, TEMPLATE_CATEGORY_KIND, type DemoApp } from '@/lib/demo-apps';
 import { runAgent, type AgentPlanStep } from '@/lib/agent';
 import {
   createConversation,
@@ -56,6 +57,8 @@ import {
   fetchProjects,
   fetchTemplates,
   insertMessage,
+  isTranscribeAvailable,
+  transcribeAudio,
   type CommunityApp,
   type Conversation,
   type Project,
@@ -111,7 +114,10 @@ export default function HomePage() {
   const [mode, setMode] = useState<'build' | 'goal'>('goal');
   const [attachments, setAttachments] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // MCP 连接状态(localStorage 持久化)
@@ -137,6 +143,10 @@ export default function HomePage() {
 
   // 生成应用预览
   const [previewApp, setPreviewApp] = useState<DemoApp | null>(null);
+
+  // 模板占位填写:首页模板快捷区点击模板后先填写占位内容再生成
+  const [placeholderTemplate, setPlaceholderTemplate] = useState<Template | null>(null);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   const displayName = profile?.display_name ?? '开发者';
   const uid = user?.id ?? 'demo-user';
@@ -314,8 +324,41 @@ export default function HomePage() {
     setAttachments((prev) => [...prev, ...Array.from(files).map((f) => f.name)]);
   };
 
-  // 语音输入:优先浏览器原生识别;后续可切换为后端 scribe_v2 转写
-  const startVoice = () => {
+  /** 模板占位填写完成:占位值真实注入 HTML,落库并打开预览(首页模板快捷区共用) */
+  const generateFromTemplate = async (tpl: Template, values: Record<string, string>) => {
+    setCreatingTemplate(true);
+    try {
+      const kind = TEMPLATE_CATEGORY_KIND[tpl.category] ?? 'landing';
+      const generated = buildDemoApp(`${tpl.title} ${tpl.category}`, '默认', {
+        kind,
+        title: tpl.title,
+        values,
+      });
+      const project = await createProject({
+        userId: uid,
+        spaceId: currentSpace?.id ?? null,
+        name: `${tpl.title} 实例`,
+        description: `基于模板 ${tpl.title} 创建(已替换占位内容)`,
+        source: 'template',
+        coverGradient: tpl.cover_gradient,
+        coverEmoji: tpl.cover_emoji,
+        appHtml: generated.files[0].content,
+      });
+      if (project) {
+        toast.success(`已基于「${tpl.title}」创建项目,占位内容已替换`);
+        setPlaceholderTemplate(null);
+        setPreviewApp(generated);
+        fetchProjects(uid, false).then(setProjects).catch(() => undefined);
+      } else {
+        toast.error('创建项目失败,请重试');
+      }
+    } finally {
+      setCreatingTemplate(false);
+    }
+  };
+
+  // 语音输入:优先平台 scribe_v2 转写(Edge Function);失败/不支持/服务不可用时回退浏览器原生识别
+  const startBrowserRecognition = () => {
     const w = window as unknown as {
       webkitSpeechRecognition?: unknown;
       SpeechRecognition?: unknown;
@@ -349,7 +392,77 @@ export default function HomePage() {
     toast.info('正在聆听,再次点击停止');
   };
 
+  const startVoice = async () => {
+    const mediaSupported =
+      Boolean(navigator.mediaDevices?.getUserMedia) && typeof MediaRecorder !== 'undefined';
+    if (isTranscribeAvailable() && mediaSupported) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordChunksRef.current = [];
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/ogg')
+            ? 'audio/ogg'
+            : '';
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordChunksRef.current.push(e.data);
+        };
+        recorder.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          recorderRef.current = null;
+          setListening(false);
+          const type = mimeType || 'audio/webm';
+          const blob = new Blob(recordChunksRef.current, { type });
+          recordChunksRef.current = [];
+          if (blob.size < 2048) {
+            toast.error('录音太短,请说完一段话后再停止');
+            return;
+          }
+          setTranscribing(true);
+          toast.info('正在转写录音…');
+          try {
+            const ext = type.includes('webm')
+              ? 'webm'
+              : type.includes('ogg')
+                ? 'ogg'
+                : type.includes('mp4')
+                  ? 'm4a'
+                  : 'webm';
+            const result = await transcribeAudio(
+              new File([blob], `voice.${ext}`, { type }),
+            );
+            const text = result.text.trim();
+            if (text) {
+              setPrompt((prev) => (prev ? `${prev} ${text}` : text));
+              toast.success(`语音转写完成(${(result.cost_ms / 1000).toFixed(1)}s)`);
+            } else {
+              toast.error('未识别到语音内容,请靠近麦克风重试');
+            }
+          } catch (error) {
+            toast.warning(`平台转写失败,已切换浏览器识别:${(error as Error).message}`);
+            startBrowserRecognition();
+          } finally {
+            setTranscribing(false);
+          }
+        };
+        recorder.start();
+        recorderRef.current = recorder;
+        setListening(true);
+        toast.info('正在聆听,再次点击停止并转写');
+        return;
+      } catch {
+        toast.warning('麦克风不可用,已切换浏览器识别');
+      }
+    }
+    startBrowserRecognition();
+  };
+
   const stopVoice = () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+      return;
+    }
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     setListening(false);
@@ -517,8 +630,9 @@ export default function HomePage() {
               'h-8 w-8 rounded-full',
               listening ? 'bg-rose-100 text-rose-600' : 'text-muted-foreground',
             )}
-            onClick={() => (listening ? stopVoice() : startVoice())}
-            title="语音输入"
+            onClick={() => (listening ? stopVoice() : void startVoice())}
+            disabled={transcribing}
+            title={transcribing ? '正在转写语音…' : '语音输入'}
           >
             <Mic className="h-4 w-4" />
           </Button>
@@ -702,25 +816,8 @@ export default function HomePage() {
     if (quickTab === 'templates') {
       return templates.slice(0, 4).map((tpl) => (
         <button key={tpl.id} type="button" className="group text-left"
-          onClick={async () => {
-            const generated = buildDemoApp(`${tpl.title} ${tpl.category}`, '默认');
-            const project = await createProject({
-              userId: uid,
-              spaceId: currentSpace?.id ?? null,
-              name: `${tpl.title} 实例`,
-              description: `基于模板 ${tpl.title} 创建`,
-              source: 'template',
-              coverGradient: tpl.cover_gradient,
-              coverEmoji: tpl.cover_emoji,
-              appHtml: generated.files[0].content,
-            });
-            if (project) {
-              toast.success(`已基于「${tpl.title}」创建项目`);
-              fetchProjects(uid, false).then(setProjects).catch(() => undefined);
-            } else {
-              toast.error('创建项目失败,请重试');
-            }
-          }}>
+          onClick={() => setPlaceholderTemplate(tpl)}
+        >
           <div className={cn(
             'flex h-28 items-center justify-center rounded-xl bg-gradient-to-br text-3xl shadow-sm transition-transform group-hover:scale-[1.02]',
             tpl.cover_gradient,
@@ -773,6 +870,17 @@ export default function HomePage() {
           </>
         )}
       </ResizablePanelGroup>
+
+      {/* 模板占位填写弹窗:填写后一键生成,占位值真实注入应用 */}
+      <TemplatePlaceholderDialog
+        template={placeholderTemplate}
+        open={Boolean(placeholderTemplate)}
+        onOpenChange={(v) => !v && setPlaceholderTemplate(null)}
+        onConfirm={(values) => {
+          if (placeholderTemplate) void generateFromTemplate(placeholderTemplate, values);
+        }}
+        submitting={creatingTemplate}
+      />
 
       {/* MCP 连接面板:配置远程 MCP 服务,localStorage 持久化 */}
       <Dialog open={mcpOpen} onOpenChange={setMcpOpen}>
