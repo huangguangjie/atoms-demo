@@ -46,7 +46,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatMessage, { type ChatMessageData } from '@/components/chat/ChatMessage';
 import AppPreview from '@/components/preview/AppPreview';
-import { DEMO_KIND_META, type DemoApp } from '@/lib/demo-apps';
+import { DEMO_KIND_META, buildDemoApp, type DemoApp } from '@/lib/demo-apps';
 import { runAgent, type AgentPlanStep } from '@/lib/agent';
 import {
   createConversation,
@@ -180,7 +180,7 @@ export default function HomePage() {
     setPrompt('');
   };
 
-  /** 生成完成后把应用落成项目,进入「我的项目」与侧边栏联动 */
+  /** 生成完成后把应用落成项目(含应用 HTML),进入「我的项目」与侧边栏联动 */
   const handleAppCreated = async (app: DemoApp) => {
     const meta = DEMO_KIND_META[app.kind];
     const project = await createProject({
@@ -191,6 +191,7 @@ export default function HomePage() {
       source: 'created',
       coverGradient: meta.gradient,
       coverEmoji: meta.emoji,
+      appHtml: app.files[0].content,
     });
     if (project) {
       toast.success(`项目「${app.title}」已保存到我的项目`);
@@ -702,6 +703,7 @@ export default function HomePage() {
       return templates.slice(0, 4).map((tpl) => (
         <button key={tpl.id} type="button" className="group text-left"
           onClick={async () => {
+            const generated = buildDemoApp(`${tpl.title} ${tpl.category}`, '默认');
             const project = await createProject({
               userId: uid,
               spaceId: currentSpace?.id ?? null,
@@ -710,6 +712,7 @@ export default function HomePage() {
               source: 'template',
               coverGradient: tpl.cover_gradient,
               coverEmoji: tpl.cover_emoji,
+              appHtml: generated.files[0].content,
             });
             if (project) {
               toast.success(`已基于「${tpl.title}」创建项目`);

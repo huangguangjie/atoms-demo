@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Eye, Link2, PlayCircle, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import AuthDialog from '@/components/auth/AuthDialog';
+import AppPreview from '@/components/preview/AppPreview';
+import { buildDemoApp, pickAppTitle, type DemoApp } from '@/lib/demo-apps';
 import {
   COMMUNITY_CATEGORIES,
+  createProject,
   fetchCommunityApps,
   fetchTemplates,
   type CommunityApp,
@@ -23,12 +35,27 @@ const FILTER_TABS = [
   'Business Card',
 ];
 
+/** 社区应用点击「体验」后打开的演示应用 */
+function appToDemoApp(app: CommunityApp): DemoApp {
+  const generated = buildDemoApp(`${app.title} ${app.category}`, '默认');
+  return { ...generated, title: app.title };
+}
+
+/** 模板点击「使用模板」后打开的演示应用 */
+function templateToDemoApp(template: Template): DemoApp {
+  const generated = buildDemoApp(`${template.title} ${template.category}`, '默认');
+  return { ...generated, title: template.title };
+}
+
 export default function ResourcesPage() {
+  const { user, currentSpace, demoMode, uidLabel } = useAuthLabel();
   const [tab, setTab] = useState<'discover' | 'templates'>('discover');
   const [category, setCategory] = useState('全部');
   const [apps, setApps] = useState<CommunityApp[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [previewApp, setPreviewApp] = useState<DemoApp | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -44,6 +71,68 @@ export default function ResourcesPage() {
         .finally(() => setLoading(false));
     }
   }, [tab, category]);
+
+  /** 需要登录的操作:未登录时先弹登录框 */
+  const requireAuth = (): string | null => {
+    const uid = user?.id ?? (demoMode ? 'demo-user' : '');
+    if (!uid) {
+      setAuthOpen(true);
+      toast.info('请先登录后再执行该操作');
+      return null;
+    }
+    return uid;
+  };
+
+  /** 体验:打开真实可运行的应用预览 */
+  const handleTry = (app: CommunityApp) => {
+    setPreviewApp(appToDemoApp(app));
+  };
+
+  /** 克隆:把社区应用落成 source=cloned 的项目(含应用 HTML) */
+  const handleClone = async (app: CommunityApp) => {
+    const uid = requireAuth();
+    if (!uid) return;
+    const generated = appToDemoApp(app);
+    const project = await createProject({
+      userId: uid,
+      spaceId: currentSpace?.id ?? null,
+      name: `${pickAppTitle(app.title)} 克隆`,
+      description: `从社区克隆的应用(原作者:${app.author_name})`,
+      source: 'cloned',
+      coverGradient: app.cover_gradient,
+      coverEmoji: app.cover_emoji,
+      appHtml: generated.files[0].content,
+    });
+    if (project) {
+      toast.success(`已克隆「${app.title}」到我的项目,可打开预览并魔改`);
+      window.dispatchEvent(new Event('atoms:projects-updated'));
+    } else {
+      toast.error('克隆失败,请重试');
+    }
+  };
+
+  /** 使用模板:落成 source=template 的项目(含应用 HTML) */
+  const handleUseTemplate = async (template: Template) => {
+    const uid = requireAuth();
+    if (!uid) return;
+    const generated = templateToDemoApp(template);
+    const project = await createProject({
+      userId: uid,
+      spaceId: currentSpace?.id ?? null,
+      name: `${template.title} 实例`,
+      description: `基于模板 ${template.title} 创建`,
+      source: 'template',
+      coverGradient: template.cover_gradient,
+      coverEmoji: template.cover_emoji,
+      appHtml: generated.files[0].content,
+    });
+    if (project) {
+      toast.success(`已基于「${template.title}」创建项目`);
+      window.dispatchEvent(new Event('atoms:projects-updated'));
+    } else {
+      toast.error('创建项目失败,请重试');
+    }
+  };
 
   const cardGradient =
     'flex aspect-[4/3] items-center justify-center rounded-t-xl bg-gradient-to-br text-5xl';
@@ -137,7 +226,7 @@ export default function ResourcesPage() {
                     <button
                       type="button"
                       className="flex flex-1 items-center justify-center gap-1 rounded-md bg-foreground px-2 py-1.5 text-[11px] font-medium text-background"
-                      onClick={() => toast.info(`「${app.title}」在线体验即将开放`)}
+                      onClick={() => handleTry(app)}
                     >
                       <PlayCircle className="h-3 w-3" />
                       体验
@@ -145,7 +234,7 @@ export default function ResourcesPage() {
                     <button
                       type="button"
                       className="flex flex-1 items-center justify-center gap-1 rounded-md bg-muted px-2 py-1.5 text-[11px] font-medium"
-                      onClick={() => toast.info(`「${app.title}」克隆后可在我的项目中魔改`)}
+                      onClick={() => void handleClone(app)}
                     >
                       <Link2 className="h-3 w-3" />
                       克隆
@@ -176,7 +265,7 @@ export default function ResourcesPage() {
                 <button
                   type="button"
                   className="w-full rounded-md bg-foreground px-2 py-1.5 text-[11px] font-medium text-background"
-                  onClick={() => toast.info('使用模板创建项目:请到首页输入区描述你的定制需求')}
+                  onClick={() => void handleUseTemplate(template)}
                 >
                   使用模板
                 </button>
@@ -193,6 +282,26 @@ export default function ResourcesPage() {
           : '模板:现成的开发方案,在占位处替换内容即可作为你的应用基础。'}
         {COMMUNITY_CATEGORIES.length > 0 ? '' : ''}
       </p>
+
+      {/* 应用体验预览 */}
+      <Dialog open={Boolean(previewApp)} onOpenChange={(v) => !v && setPreviewApp(null)}>
+        <DialogContent className="h-[85vh] max-w-4xl overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{previewApp?.title} 在线体验</DialogTitle>
+            <DialogDescription>社区应用的实时预览</DialogDescription>
+          </DialogHeader>
+          {previewApp && <AppPreview app={previewApp} onClose={() => setPreviewApp(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* 登录弹窗:克隆/使用模板前需要身份 */}
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
     </div>
   );
+}
+
+/** 资源页专用:uidLabel 仅用于触发 useAuth 依赖(保留类型安全) */
+function useAuthLabel() {
+  const auth = useAuth();
+  return { ...auth, uidLabel: auth.user?.id ?? '' };
 }
