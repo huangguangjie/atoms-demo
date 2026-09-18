@@ -92,9 +92,9 @@ try {
   await page.waitForTimeout(500);
   log('公告条展示并可关闭', noticeVisible && !(await notice.isVisible().catch(() => false)));
 
-  // 6) + 菜单:上传附件 → chip 出现 → 移除
+  // 6) + 面板:附件 → chip 出现 → 移除(T11 深色面板)
   await plusBtn.click();
-  await page.getByText('上传附件').click();
+  await page.getByRole('button', { name: '附件', exact: true }).click();
   await page.locator('input[type="file"]').setInputFiles({
     name: '需求说明.md', mimeType: 'text/plain', buffer: Buffer.from('做一个番茄钟'),
   });
@@ -104,21 +104,29 @@ try {
   await page.waitForTimeout(300);
   log('附件上传与移除(chip)', chipOk && !(await chip.isVisible().catch(() => false)));
 
-  // 7) + 菜单:# 引用 → 提示词注入 #文件
+  // 7) + 面板:引用到提示词展开子菜单 → 注入 #文件
   await plusBtn.click();
-  await page.getByRole('menuitem', { name: '文件' }).click();
+  await page.getByRole('button', { name: '引用到提示词' }).click();
+  await page.getByRole('button', { name: '文件', exact: true }).click();
   await page.waitForTimeout(300);
   const promptVal = await textarea.inputValue();
   log('# 引用注入提示词', promptVal.includes('#文件'), promptVal);
 
-  // 8) 主题切换 → 紫罗兰(菜单项出现 ✓)
+  // 8) T12 主题面板:搜索过滤 + 主题切换(Notion)→ 触发按钮显示主题名 + 选中 ✓ 图标
   await themeBtn.click();
-  await page.getByRole('menuitem', { name: '紫罗兰' }).click();
+  await page.getByPlaceholder('搜索主题').fill('不存在的主题');
+  const themeEmptyOk = await page.getByText(/没有匹配/).isVisible();
+  await page.getByPlaceholder('搜索主题').fill('notion');
+  const notionItem = page.getByRole('button', { name: 'Notion' });
+  await notionItem.click();
   await page.waitForTimeout(300);
+  const themeTriggerText = await themeBtn.innerText();
+  log('主题搜索过滤与切换生效(触发按钮显示 Notion)', themeEmptyOk && themeTriggerText.includes('Notion'), `${themeEmptyOk}/${themeTriggerText.trim()}`);
   await themeBtn.click();
-  const themeChecked = await page.getByRole('menuitem', { name: /紫罗兰/ }).innerText();
+  await page.waitForTimeout(200);
+  const themeCheckCount = await page.getByRole('button', { name: 'Notion' }).locator('svg.lucide-check').count();
   await page.keyboard.press('Escape');
-  log('主题切换生效(✓ 标记)', themeChecked.includes('✓'), themeChecked);
+  log('当前主题选中高亮(✓ 图标)', themeCheckCount === 1);
 
   // 9) 构建/目标模式切换 → 构建
   await modeBtn.click();
@@ -137,9 +145,9 @@ try {
   }
   log('语音入口有明确反馈(转写或回退提示)', /聆听|转写|识别|麦克风/.test(voiceToast), voiceToast.slice(0, 60));
 
-  // 11) MCP:+ 菜单打开连接弹窗 → 连接 GitHub → 菜单显示「已连 1」
+  // 11) MCP:+ 面板打开连接弹窗 → 连接 GitHub → 连接器显示「已连 1」
   await plusBtn.click();
-  await page.getByRole('menuitem', { name: /连接 MCP 工具/ }).click();
+  await page.getByRole('button', { name: '连接器' }).click();
   await page.getByPlaceholder('服务名称,如:GitHub').fill('GitHub');
   await page.getByPlaceholder('https://mcp.example.com/sse').fill('https://mcp.example.com/sse');
   await page.getByRole('button', { name: '连接服务' }).click();

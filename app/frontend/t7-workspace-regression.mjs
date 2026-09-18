@@ -87,7 +87,7 @@ try {
   // 4) 「新会话」入口 → 发起 AI 对话
   await page.getByTitle('在当前工作区新建会话').click();
   await page.waitForTimeout(1000);
-  await page.getByPlaceholder(/描述你想要构建的应用/).fill(PROMPT);
+  await page.getByPlaceholder('@David 进行数据开发。').fill(PROMPT);
   await page.getByTitle('发送').click();
   let started = true;
   try { await page.getByTitle('停止生成').waitFor({ state: 'visible', timeout: 30000 }); } catch { started = false; }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -11,10 +11,14 @@ import {
   LogOut,
   MessageSquare,
   MessageSquarePlus,
+  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
   Settings,
+  Star,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,14 +31,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthDialog from '@/components/auth/AuthDialog';
 import CreateSpaceDialog from '@/components/workspace/CreateSpaceDialog';
 import {
+  deleteConversation,
   demoProfile,
   fetchRecentConversations,
+  renameConversation,
+  setConversationFavorite,
   type Conversation,
 } from '@/lib/supabase';
 
@@ -71,26 +89,101 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [authOpen, setAuthOpen] = useState(false);
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
+  /** T10 会话操作态:行内重命名的会话 id 与输入值;待删除的会话(二次确认弹窗) */
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
   const isSignedIn = Boolean(user) || demoMode;
 
-  useEffect(() => {
+  const refreshConversations = useCallback(() => {
     if (loading || !isSignedIn) return;
     const uid = user?.id ?? demoProfile.id;
     const spaceId = currentSpace?.id;
-    const load = () =>
-      // 最近对话按当前工作区过滤:切换工作区后仅展示该工作区下的会话
-      fetchRecentConversations(uid, spaceId)
-        .then(setConversations)
-        .catch((error) => {
-          console.error('[sidebar] 读取最近对话失败:', error);
-          setConversations([]);
-        });
-    load();
+    // 最近对话按当前工作区过滤:切换工作区后仅展示该工作区下的会话
+    fetchRecentConversations(uid, spaceId)
+      .then(setConversations)
+      .catch((error) => {
+        console.error('[sidebar] 读取最近对话失败:', error);
+        setConversations([]);
+      });
+  }, [loading, isSignedIn, user, currentSpace?.id]);
+
+  useEffect(() => {
+    refreshConversations();
     // 首页新建/更新对话后自动刷新最近列表
-    window.addEventListener('atoms:conversations-updated', load);
-    return () => window.removeEventListener('atoms:conversations-updated', load);
-  }, [loading, isSignedIn, user, currentSpace?.id, location.pathname]);
+    window.addEventListener('atoms:conversations-updated', refreshConversations);
+    return () => window.removeEventListener('atoms:conversations-updated', refreshConversations);
+  }, [refreshConversations, location.pathname]);
+
+  /** 收藏/取消收藏:真实落库后本地同步排序刷新 */
+  const handleToggleFavorite = async (conversation: Conversation) => {
+    if (!isSignedIn) {
+      setAuthOpen(true);
+      return;
+    }
+    const uid = user?.id ?? demoProfile.id;
+    const next = !conversation.is_favorite;
+    try {
+      await setConversationFavorite(uid, conversation.id, next);
+      toast.success(next ? '已收藏该对话' : '已取消收藏');
+      refreshConversations();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '收藏操作失败,请重试');
+    }
+  };
+
+  /** 重命名进入行内编辑态 */
+  const handleStartRename = (conversation: Conversation) => {
+    setRenamingId(conversation.id);
+    setRenameValue(conversation.title);
+  };
+
+  const handleCancelRename = () => {
+    setRenamingId(null);
+    setRenameValue('');
+  };
+
+  /** 重命名提交:空值视为取消,否则真实落库 */
+  const handleRenameSubmit = async (conversation: Conversation) => {
+    if (!isSignedIn) {
+      handleCancelRename();
+      return;
+    }
+    const title = renameValue.trim();
+    if (!title || title === conversation.title) {
+      handleCancelRename();
+      return;
+    }
+    const uid = user?.id ?? demoProfile.id;
+    try {
+      await renameConversation(uid, conversation.id, title);
+      toast.success('已重命名');
+      handleCancelRename();
+      refreshConversations();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '重命名失败,请重试');
+    }
+  };
+
+  /** 删除:二次确认后真实删除(消息随外键级联删除) */
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!isSignedIn) {
+      setAuthOpen(true);
+      return;
+    }
+    const uid = user?.id ?? demoProfile.id;
+    try {
+      await deleteConversation(uid, target.id);
+      toast.success('对话已删除');
+      refreshConversations();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '删除对话失败,请重试');
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -238,7 +331,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <button
               type="button"
               title="在当前工作区新建会话"
-              onClick={() => navigate('/', { state: { newChat: true } })}
+              onClick={() => navigate('/')}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
             >
               <MessageSquarePlus className="h-3 w-3" />
@@ -253,17 +346,88 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           ) : (
             <div className="space-y-0.5">
-              {conversations.map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => navigate('/', { state: { conversationId: conversation.id } })}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
-                >
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{conversation.title}</span>
-                </button>
-              ))}
+              {conversations.map((conversation) => {
+                const isRenaming = renamingId === conversation.id;
+                const isFavorite = Boolean(conversation.is_favorite);
+                // 行内重命名态:输入框替换整行,回车保存 / Esc 取消 / 失焦提交
+                if (isRenaming) {
+                  return (
+                    <div key={conversation.id} className="rounded-lg bg-sidebar-accent/60 px-2 py-1.5">
+                      <Input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={() => handleRenameSubmit(conversation)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameSubmit(conversation);
+                          else if (e.key === 'Escape') handleCancelRename();
+                        }}
+                        className="h-7 rounded-md border-border/80 bg-background text-sm"
+                        placeholder="输入新名称,回车保存"
+                        aria-label="重命名对话"
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <div key={conversation.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/chat/${conversation.id}`)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+                    >
+                      {isFavorite ? (
+                        <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />
+                      ) : (
+                        <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
+                    </button>
+                    {/* hover/选中时显示的胶囊形省略号操作按钮 */}
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          title="会话操作"
+                          aria-label={`会话「${conversation.title}」操作`}
+                          className="absolute right-1.5 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center justify-center rounded-full bg-sidebar-accent px-1.5 text-muted-foreground opacity-0 shadow-sm ring-1 ring-border/60 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="start"
+                        side="right"
+                        sideOffset={4}
+                        className="w-40 border-border/60 bg-popover"
+                      >
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onSelect={() => handleToggleFavorite(conversation)}
+                        >
+                          <Star className={cn('h-4 w-4', isFavorite && 'fill-amber-400 text-amber-400')} />
+                          {isFavorite ? '取消收藏' : '收藏'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onSelect={() => handleStartRename(conversation)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          重命名
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="gap-2 text-red-400 focus:bg-red-500/10 focus:text-red-300"
+                          onSelect={() => setDeleteTarget(conversation)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          删除
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -403,6 +567,34 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
       <CreateSpaceDialog open={createSpaceOpen} onOpenChange={setCreateSpaceOpen} />
+      {/* 删除对话二次确认弹窗 */}
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除对话</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定删除「{deleteTarget?.title ?? ''}」吗?该对话的全部消息将一并删除,此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteConfirm();
+              }}
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 }

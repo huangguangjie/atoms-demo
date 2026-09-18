@@ -40,6 +40,8 @@ export interface Conversation {
   user_id: string;
   space_id: string | null;
   title: string;
+  /** 收藏标记:侧边栏最近对话收藏项优先展示(T10) */
+  is_favorite?: boolean;
   updated_at?: string;
 }
 
@@ -343,12 +345,17 @@ export async function fetchRecentConversations(
   if (!isSupabaseConfigured) {
     return demoConversations
       .filter((c) => !spaceId || c.space_id === spaceId)
-      .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+      .sort((a, b) => {
+        const fav = Number(Boolean(b.is_favorite)) - Number(Boolean(a.is_favorite));
+        if (fav !== 0) return fav;
+        return (b.updated_at ?? '').localeCompare(a.updated_at ?? '');
+      })
       .slice(0, 8);
   }
   let query = supabase.from('conversations').select('*').eq('user_id', userId);
   if (spaceId) query = query.eq('space_id', spaceId);
   const { data, error } = await query
+    .order('is_favorite', { ascending: false })
     .order('updated_at', { ascending: false })
     .limit(8);
   if (error) {
@@ -419,6 +426,87 @@ export async function fetchConversationMessages(conversationId: string): Promise
     throw new Error(`读取对话消息失败:${error.message}`);
   }
   return (data as Message[]) ?? [];
+}
+
+/** 读取单个对话(详情页顶栏标题使用;RLS 保证只能读到自己的会话) */
+export async function fetchConversation(conversationId: string): Promise<Conversation | null> {
+  if (!isSupabaseConfigured) {
+    return demoConversations.find((c) => c.id === conversationId) ?? null;
+  }
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('id', conversationId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`读取对话失败:${error.message}`);
+  }
+  return (data as Conversation) ?? null;
+}
+
+/** 重命名对话:真实落库(失败显式抛错,由调用方 toast 透出) */
+export async function renameConversation(
+  userId: string,
+  conversationId: string,
+  title: string,
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    demoConversations = demoConversations.map((c) =>
+      c.id === conversationId && c.user_id === userId
+        ? { ...c, title, updated_at: new Date().toISOString() }
+        : c,
+    );
+    return;
+  }
+  const { error } = await supabase
+    .from('conversations')
+    .update({ title })
+    .eq('id', conversationId)
+    .eq('user_id', userId);
+  if (error) {
+    throw new Error(`重命名对话失败:${error.message}`);
+  }
+}
+
+/** 收藏/取消收藏对话:真实落库,收藏项在最近列表中优先展示 */
+export async function setConversationFavorite(
+  userId: string,
+  conversationId: string,
+  favorite: boolean,
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    demoConversations = demoConversations.map((c) =>
+      c.id === conversationId && c.user_id === userId ? { ...c, is_favorite: favorite } : c,
+    );
+    return;
+  }
+  const { error } = await supabase
+    .from('conversations')
+    .update({ is_favorite: favorite })
+    .eq('id', conversationId)
+    .eq('user_id', userId);
+  if (error) {
+    throw new Error(`收藏操作失败:${error.message}`);
+  }
+}
+
+/** 删除对话:消息随外键级联删除,失败显式抛错 */
+export async function deleteConversation(userId: string, conversationId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    demoConversations = demoConversations.filter(
+      (c) => !(c.id === conversationId && c.user_id === userId),
+    );
+    demoMessages = demoMessages.filter((m) => m.conversation_id !== conversationId);
+    return;
+  }
+  const { error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('id', conversationId)
+    .eq('user_id', userId);
+  if (error) {
+    throw new Error(`删除对话失败:${error.message}`);
+  }
 }
 
 export interface CreateProjectInput {

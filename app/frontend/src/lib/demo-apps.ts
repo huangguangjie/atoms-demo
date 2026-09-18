@@ -43,6 +43,21 @@ export function themeToPalette(theme: string): Palette {
       return { primary: '#0284c7', primarySoft: '#f0f9ff', accent: '#06b6d4', bg: '#f7fbfe', card: '#ffffff', text: '#0c2233', muted: '#5c7488', border: '#dcebf5', dark: false };
     case '暗夜':
       return { primary: '#f59e0b', primarySoft: '#451a03', accent: '#fbbf24', bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', muted: '#94a3b8', border: '#334155', dark: true };
+    // T12 新主题面板配色映射(与 HomePage APP_THEMES 对齐,保证演示模式下主题同样生效)
+    case 'Zen':
+      return { primary: '#171717', primarySoft: '#f5f5f5', accent: '#525252', bg: '#fafafa', card: '#ffffff', text: '#171717', muted: '#737373', border: '#e5e5e5', dark: false };
+    case 'Terracotta & Clay':
+      return { primary: '#c2542d', primarySoft: '#fdf0e7', accent: '#e07850', bg: '#fdf6f0', card: '#ffffff', text: '#3d2317', muted: '#8a6a58', border: '#f0e2d6', dark: false };
+    case 'Notion':
+      return { primary: '#37352f', primarySoft: '#f1f1ef', accent: '#787774', bg: '#ffffff', card: '#f7f7f5', text: '#37352f', muted: '#787774', border: '#e9e9e7', dark: false };
+    case 'Material You':
+      return { primary: '#6750a4', primarySoft: '#e8def8', accent: '#7d5260', bg: '#fffbfe', card: '#f3edf7', text: '#1d1b20', muted: '#79747e', border: '#e7e0ec', dark: false };
+    case 'Golden Honey':
+      return { primary: '#ca8a04', primarySoft: '#fef9c3', accent: '#b45309', bg: '#fdf6e3', card: '#ffffff', text: '#422006', muted: '#a16207', border: '#f0e6c8', dark: false };
+    case 'Nordic Moss & Stone':
+      return { primary: '#5f7161', primarySoft: '#eef1ee', accent: '#8fa08f', bg: '#f4f6f3', card: '#ffffff', text: '#2f3a30', muted: '#6b7a6c', border: '#e2e8e2', dark: false };
+    case 'White Beach':
+      return { primary: '#0ea5e9', primarySoft: '#e0f2fe', accent: '#0369a1', bg: '#f8fdff', card: '#ffffff', text: '#0c4a6e', muted: '#5c7488', border: '#dbeafe', dark: false };
     default:
       return { primary: '#7c3aed', primarySoft: '#f5f3ff', accent: '#c084fc', bg: '#fafafc', card: '#ffffff', text: '#1c1626', muted: '#6b7280', border: '#e8e4f0', dark: false };
   }

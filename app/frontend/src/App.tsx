@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import { AuthProvider } from './contexts/AuthContext';
 import HomePage from './pages/HomePage';
+import ChatDetailPage from './pages/ChatDetailPage';
 import ResourcesPage from './pages/ResourcesPage';
 import ProjectsPage from './pages/ProjectsPage';
 import AuthCallback from './pages/AuthCallback';
@@ -16,6 +17,7 @@ const AppRoutes = () => (
   <Routes>
     <Route element={<AppLayout />}>
       <Route path="/" element={<HomePage />} />
+      <Route path="/chat/:conversationId" element={<ChatDetailPage />} />
       <Route path="/resources" element={<ResourcesPage />} />
       <Route path="/projects" element={<ProjectsPage />} />
     </Route>
