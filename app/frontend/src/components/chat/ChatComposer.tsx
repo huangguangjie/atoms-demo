@@ -1,13 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
   AudioLines,
+  Bot,
   Cable,
   Check,
   ChevronDown,
   ChevronRight,
   FlaskConical,
-  Hash,
+  FolderOpen,
+  KeyRound,
   Paperclip,
   Plus,
   Search,
@@ -18,6 +20,7 @@ import {
   Video,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -62,13 +65,45 @@ export const APP_THEMES: AppThemeDef[] = [
   { id: 'white-beach', name: 'White Beach', swatches: ['#0ea5e9', '#ffffff', '#e0f2fe', '#0369a1'], palette: { primary: '#0ea5e9', accent: '#0369a1', bg: '#f8fdff', card: '#ffffff', text: '#0c4a6e' }, promptHint: '白色海滩风天蓝与纯白配色、清爽通透、浅色阴影' },
 ];
 
+/** T15:未选择主题时的中性预览卡(仅用于菜单右侧预览,不进入主题列表与生成链路) */
+const NEUTRAL_THEME: AppThemeDef = {
+  id: 'default',
+  name: '默认',
+  swatches: ['#64748b', '#f1f5f9', '#cbd5e1', '#0f172a'],
+  palette: { primary: '#334155', accent: '#64748b', bg: '#f8fafc', card: '#ffffff', text: '#0f172a' },
+  promptHint: '',
+};
+
 const BUILD_MODES = [
   { key: 'build', label: '构建', desc: '逐步生成并预览应用' },
   { key: 'goal', label: '目标', desc: '按目标自动规划执行' },
 ] as const;
-const HASH_OPTIONS = ['文件', '位置', '关键信息'];
 
 export type ComposerMode = 'build' | 'goal';
+
+// ---------------------------------------------------------------------------
+// T17 输入框内 # 引用菜单:上传 / AI / 密钥 / 项目
+// ---------------------------------------------------------------------------
+
+type RefKindKey = 'upload' | 'ai' | 'secret' | 'project';
+
+interface RefKind {
+  key: RefKindKey;
+  label: string;
+  desc: string;
+  icon: LucideIcon;
+}
+
+const REF_KINDS: RefKind[] = [
+  { key: 'upload', label: '上传', desc: '上传本地文件作为附件', icon: Paperclip },
+  { key: 'ai', label: 'AI', desc: '插入 AI 引用快捷指令', icon: Bot },
+  { key: 'secret', label: '密钥', desc: '密钥由服务端安全托管', icon: KeyRound },
+  { key: 'project', label: '项目', desc: '引用已有项目进入生成链路', icon: FolderOpen },
+];
+
+type RefRow =
+  | { type: 'kind'; key: RefKindKey; label: string; desc: string; icon: LucideIcon }
+  | { type: 'project'; id: string; name: string };
 
 interface McpServer {
   id: string;
@@ -130,17 +165,22 @@ export interface ChatComposerProps {
   onStop: () => void;
   /** 详情页左栏紧凑样式(T13 深色窄栏) */
   compact?: boolean;
-  theme: AppThemeDef;
-  onThemeChange: (theme: AppThemeDef) => void;
+  /** T15:主题可为空——未选择时不高亮、不注入主题提示、生成走中性默认色板 */
+  theme: AppThemeDef | null;
+  onThemeChange: (theme: AppThemeDef | null) => void;
   /** 受控构建/目标模式(可选):首页需要把所选模式带入详情页 */
   mode?: ComposerMode;
   onModeChange?: (mode: ComposerMode) => void;
+  /** T17:# 引用菜单可选的已有项目(选中后以 #项目:名称 注入提示词并进入生成链路) */
+  referenceProjects?: { id: string; name: string }[];
 }
 
 /**
  * 对话输入区(首页欢迎页与 T13 详情页共用):
- * 大圆角卡片 + 文本域 + 加号面板(团队/附件/引用/连接器/视频/深度研究/竞赛)
- * + 主题面板(搜索/色块/预览)+ 构建/目标模式 + 语音 + 发送/停止/入队。
+ * 大圆角卡片 + 文本域(# 触发引用菜单:上传/AI/密钥/项目)
+ * + 加号面板(团队/附件/连接器/视频/深度研究/竞赛)
+ * + 主题面板(搜索/色块/预览,T15 默认无选中)+ 构建/目标模式(T18 对勾右移)
+ * + 语音 + 发送/停止/入队。
  */
 export default function ChatComposer({
   prompt,
@@ -155,6 +195,7 @@ export default function ChatComposer({
   onThemeChange,
   mode: modeProp,
   onModeChange,
+  referenceProjects = [],
 }: ChatComposerProps) {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
@@ -175,12 +216,19 @@ export default function ChatComposer({
   const [teamMode, setTeamMode] = useState(true);
   const [deepResearch, setDeepResearch] = useState(false);
   const [videoDot, setVideoDot] = useState(true);
-  const [hashOpen, setHashOpen] = useState(false);
 
-  // T12 主题面板
+  // T17 # 引用菜单:输入 # 触发,实时过滤,Esc/外点/删除 # 关闭,兼容中文输入法
+  const [refMenuOpen, setRefMenuOpen] = useState(false);
+  const [refShowProjects, setRefShowProjects] = useState(false);
+  const [refQuery, setRefQuery] = useState('');
+  const [refRange, setRefRange] = useState({ start: 0, end: 0 });
+  const [refHighlight, setRefHighlight] = useState(0);
+  const composingRef = useRef(false);
+
+  // T12 主题面板(T15:theme 可为空,未选择时中性文案、无高亮项)
   const [themeSearch, setThemeSearch] = useState('');
   const [themeOpen, setThemeOpen] = useState(false);
-  const [previewTheme, setPreviewTheme] = useState<AppThemeDef>(theme);
+  const [previewTheme, setPreviewTheme] = useState<AppThemeDef | null>(theme);
   const filteredThemes = APP_THEMES.filter((item) => item.name.toLowerCase().includes(themeSearch.trim().toLowerCase()));
 
   const [internalMode, setInternalMode] = useState<ComposerMode>('goal');
@@ -188,6 +236,83 @@ export default function ChatComposer({
   const setMode = (next: ComposerMode) => {
     setInternalMode(next);
     onModeChange?.(next);
+  };
+
+  // # 引用菜单当前展示行:项目二级列表或四个引用类别,均按 refQuery 实时过滤
+  const refRows: RefRow[] = refShowProjects
+    ? referenceProjects
+        .filter((p) => !refQuery || p.name.toLowerCase().includes(refQuery.toLowerCase()))
+        .map((p) => ({ type: 'project' as const, id: p.id, name: p.name }))
+    : REF_KINDS.filter(
+        (k) => !refQuery || `${k.label}${k.desc}`.toLowerCase().includes(refQuery.toLowerCase()),
+      ).map((k) => ({ type: 'kind' as const, key: k.key, label: k.label, desc: k.desc, icon: k.icon }));
+
+  const closeRefMenu = () => {
+    setRefMenuOpen(false);
+    setRefShowProjects(false);
+    setRefQuery('');
+    setRefHighlight(0);
+  };
+
+  // 提示词被外部清空(如发送后)时收起引用菜单,避免残留过期选区
+  useEffect(() => {
+    if (!prompt && refMenuOpen) {
+      setRefMenuOpen(false);
+      setRefShowProjects(false);
+      setRefQuery('');
+    }
+  }, [prompt, refMenuOpen]);
+
+  /** 根据光标前的 # 片段决定是否展开引用菜单(空格/换行/删除 # 均关闭) */
+  const maybeOpenRefMenu = (value: string, caret: number) => {
+    if (composingRef.current) return;
+    const before = value.slice(0, caret);
+    const hashIdx = before.lastIndexOf('#');
+    const fragment = hashIdx === -1 ? '' : before.slice(hashIdx + 1);
+    if (hashIdx === -1 || /[\s\n]/.test(fragment)) {
+      if (refMenuOpen) closeRefMenu();
+      return;
+    }
+    setRefRange({ start: hashIdx, end: caret });
+    setRefQuery(fragment);
+    setRefHighlight(0);
+    setRefMenuOpen(true);
+  };
+
+  /** 用 token 替换 # 触发片段(空 token 即仅删除触发文本) */
+  const applyRefToken = (token: string) => {
+    const next = prompt.slice(0, refRange.start) + token + prompt.slice(refRange.end);
+    onPromptChange(next);
+    closeRefMenu();
+  };
+
+  const selectRefRow = (row: RefRow) => {
+    if (row.type === 'project') {
+      applyRefToken(`#项目:${row.name} `);
+      toast.success(`已引用项目:${row.name}`);
+      return;
+    }
+    switch (row.key) {
+      case 'upload':
+        // 上传复用既有文件选择器,触发文本不留在提示词中
+        applyRefToken('');
+        setTimeout(() => fileInputRef.current?.click(), 50);
+        break;
+      case 'ai':
+        // AI:插入引用快捷指令
+        applyRefToken('#AI ');
+        break;
+      case 'secret':
+        // 密钥:仅提供安全提示,不注入任何敏感值
+        applyRefToken('');
+        toast.info('密钥属于敏感信息:平台密钥统一存放在服务端 Secrets,不会注入提示词,也不会暴露给前端。');
+        break;
+      case 'project':
+        // 项目:展开二级列表选择具体项目
+        setRefShowProjects(true);
+        setRefHighlight(0);
+        break;
+    }
   };
 
   const handleAttach = (files: FileList | null) => {
@@ -333,7 +458,7 @@ export default function ChatComposer({
   return (
     <div
       className={cn(
-        'rounded-3xl border border-border/70 bg-card/90 shadow-xl shadow-black/5 backdrop-blur focus-within:border-ring',
+        'relative rounded-3xl border border-border/70 bg-card/90 shadow-xl shadow-black/5 backdrop-blur focus-within:border-ring',
         compact && 'rounded-2xl shadow-md',
       )}
     >
@@ -358,8 +483,45 @@ export default function ChatComposer({
       )}
       <textarea
         value={prompt}
-        onChange={(e) => onPromptChange(e.target.value)}
+        onChange={(e) => {
+          onPromptChange(e.target.value);
+          maybeOpenRefMenu(e.target.value, e.target.selectionStart ?? e.target.value.length);
+        }}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={(e) => {
+          // 中文输入法组词结束后再检测 # 触发,避免组词过程中的中间态误开菜单
+          composingRef.current = false;
+          const el = e.currentTarget;
+          maybeOpenRefMenu(el.value, el.selectionStart ?? el.value.length);
+        }}
         onKeyDown={(e) => {
+          // 输入法组词期间的按键(如确认拼音的 Enter)不触发菜单导航与发送
+          if (e.nativeEvent.isComposing) return;
+          if (refMenuOpen) {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              closeRefMenu();
+              return;
+            }
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setRefHighlight((h) => Math.min(h + 1, refRows.length - 1));
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setRefHighlight((h) => Math.max(h - 1, 0));
+              return;
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const row = refRows[refHighlight];
+              if (row) selectRefRow(row);
+              return;
+            }
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             onSend();
@@ -369,6 +531,69 @@ export default function ChatComposer({
         rows={compact ? 2 : 3}
         className="w-full resize-none bg-transparent px-5 pt-4 text-sm outline-none placeholder:text-muted-foreground"
       />
+
+      {/* T17 # 引用菜单:紧随输入框定位,支持实时过滤/键盘导航/外点与 Esc 关闭 */}
+      {refMenuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={closeRefMenu} />
+          <div
+            role="listbox"
+            aria-label="引用菜单"
+            className="absolute bottom-[52px] left-4 z-50 w-72 overflow-hidden rounded-xl border border-white/10 bg-zinc-900 p-1.5 text-zinc-100 shadow-2xl shadow-black/40"
+          >
+            <div className="flex items-center gap-1 px-2 pb-1 pt-0.5 text-[10px] text-zinc-500">
+              {refShowProjects && (
+                <button
+                  type="button"
+                  className="rounded px-1 text-zinc-400 hover:text-zinc-200"
+                  onClick={() => {
+                    setRefShowProjects(false);
+                    setRefHighlight(0);
+                  }}
+                >
+                  返回
+                </button>
+              )}
+              <span>{refShowProjects ? '选择要引用的项目' : '引用到提示词'}</span>
+              {refQuery && <span className="ml-auto truncate">「{refQuery}」</span>}
+            </div>
+            {refRows.length === 0 && (
+              <p className="px-2.5 py-3 text-xs text-zinc-500">
+                {refShowProjects ? '暂无匹配项目,可先在「我的项目」页创建' : '没有匹配的引用项'}
+              </p>
+            )}
+            {refRows.map((row, idx) => (
+              <button
+                key={row.type === 'kind' ? row.key : row.id}
+                type="button"
+                role="option"
+                aria-selected={idx === refHighlight}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-zinc-200 hover:bg-white/5',
+                  idx === refHighlight && 'bg-white/10',
+                )}
+                onMouseEnter={() => setRefHighlight(idx)}
+                onClick={() => selectRefRow(row)}
+              >
+                {row.type === 'kind' ? (
+                  <>
+                    <row.icon className="h-4 w-4 shrink-0 text-zinc-400" />
+                    <span className="shrink-0">{row.label}</span>
+                    <span className="ml-auto truncate text-[11px] text-zinc-500">{row.desc}</span>
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="h-4 w-4 shrink-0 text-zinc-400" />
+                    <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                    <span className="shrink-0 text-[11px] text-zinc-500">引用</span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className={cn('flex items-center gap-2 px-3 pb-3 pt-1', compact && 'gap-1.5 px-2')}>
         <input
           ref={fileInputRef}
@@ -418,7 +643,7 @@ export default function ChatComposer({
 
               <div className="my-1 h-px bg-white/10" />
 
-              {/* 第二组:附件 / 引用到提示词 / 连接器(附件、引用、MCP 均保留原功能) */}
+              {/* 第二组:附件 / 连接器(附件保留原功能;引用已改为输入框内 # 触发,T17) */}
               <button
                 type="button"
                 className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
@@ -431,36 +656,6 @@ export default function ChatComposer({
                 附件
                 <ChevronRight className="ml-auto h-3.5 w-3.5 text-zinc-500" />
               </button>
-              <button
-                type="button"
-                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
-                onClick={() => setHashOpen((v) => !v)}
-              >
-                <Hash className="h-4 w-4 text-zinc-300" />
-                引用到提示词
-                <ChevronRight
-                  className={cn('ml-auto h-3.5 w-3.5 text-zinc-500 transition-transform', hashOpen && 'rotate-90')}
-                />
-              </button>
-              {hashOpen && (
-                <div className="ml-4 flex flex-col pb-1">
-                  {HASH_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-white/5"
-                      onClick={() => {
-                        onPromptChange(`${prompt}#${option} `);
-                        setHashOpen(false);
-                        setPlusOpen(false);
-                      }}
-                    >
-                      <span aria-hidden="true" className="text-[10px] text-zinc-500">#</span>
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              )}
               <button
                 type="button"
                 className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
@@ -529,7 +724,7 @@ export default function ChatComposer({
           </PopoverContent>
         </Popover>
 
-        {/* 主题切换:T12 面板——搜索、主题列表(四色块)、右侧预览卡片、新建/设置入口 */}
+        {/* 主题切换:T12 面板 + T15 默认无选中——触发按钮中性文案,列表不预高亮 */}
         <Popover
           open={themeOpen}
           onOpenChange={(open) => {
@@ -547,7 +742,7 @@ export default function ChatComposer({
                 compact && 'px-2',
               )}
             >
-              <span className="max-w-[120px] truncate text-xs">{theme.name}</span>
+              <span className="max-w-[120px] truncate text-xs">{theme?.name ?? '主题'}</span>
               <ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform', themeOpen && 'rotate-180')} />
             </Button>
           </PopoverTrigger>
@@ -579,7 +774,7 @@ export default function ChatComposer({
                       }}
                       className={cn(
                         'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs text-foreground/90 hover:bg-muted',
-                        theme.id === item.id && 'bg-muted font-medium',
+                        theme?.id === item.id && 'bg-muted font-medium',
                       )}
                     >
                       <span className="flex shrink-0 -space-x-1.5">
@@ -592,7 +787,7 @@ export default function ChatComposer({
                         ))}
                       </span>
                       <span className="truncate">{item.name}</span>
-                      {theme.id === item.id && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-violet-500" />}
+                      {theme?.id === item.id && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-violet-500" />}
                     </button>
                   ))}
                   {filteredThemes.length === 0 && (
@@ -618,16 +813,16 @@ export default function ChatComposer({
                   </button>
                 </div>
               </div>
-              {/* 右列:当前悬停/所选主题的迷你预览卡片 */}
+              {/* 右列:当前悬停/所选主题的迷你预览卡片(T15 未选择时显示中性预览) */}
               <div className="min-w-0 flex-1 border-l border-border/60 p-3">
-                <ThemePreviewCard def={previewTheme} />
+                <ThemePreviewCard def={previewTheme ?? NEUTRAL_THEME} />
               </div>
             </div>
           </PopoverContent>
         </Popover>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* 构建/目标模式切换:仅显示文本名称,不带图标 */}
+          {/* 构建/目标模式切换:仅显示文本名称,T18 选中对勾移至行最右侧且不保留行首占位 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -639,12 +834,18 @@ export default function ChatComposer({
                 <ChevronDown className="h-3 w-3 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="min-w-[220px]">
               {BUILD_MODES.map((item) => (
-                <DropdownMenuItem key={item.key} onClick={() => setMode(item.key)}>
-                  {mode === item.key && <Check className="h-3.5 w-3.5 text-violet-500" />}
-                  <span>{item.label}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">{item.desc}</span>
+                <DropdownMenuItem
+                  key={item.key}
+                  onClick={() => setMode(item.key)}
+                  className="justify-between gap-3"
+                >
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span>{item.label}</span>
+                    <span className="text-xs text-muted-foreground">{item.desc}</span>
+                  </span>
+                  {mode === item.key && <Check className="h-3.5 w-3.5 shrink-0 text-violet-500" />}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 
 ENV_PATH = "/workspace/app/frontend/.env.local"
-EMAIL = "browser-1789734428@atoms.test"
+EMAIL = f"edge-probe-{int(time.time())}@atoms.test"
 PASSWORD = "AtomsDemo2026!"
 PROMPT = "做一个极简白噪音混音器,雨声/海浪/风声三轨切换,浅色主题,中文界面"
 
@@ -63,6 +63,20 @@ def main() -> None:
     env = load_env(ENV_PATH)
     base = env["VITE_SUPABASE_URL"].rstrip("/")
     anon = env["VITE_SUPABASE_ANON_KEY"]
+
+    # 新邮箱需先注册再登录(mailer_autoconfirm 开启,注册即激活)
+    signup_body = json.dumps({"email": EMAIL, "password": PASSWORD}).encode()
+    signup_req = urllib.request.Request(
+        f"{base}/auth/v1/signup",
+        data=signup_body,
+        headers={"apikey": anon, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(signup_req, timeout=20) as resp:
+            print(f"注册 HTTP {resp.status}")
+    except urllib.error.HTTPError as exc:
+        print(f"注册 HTTP {exc.code}(可能已存在,继续登录)")
 
     body = json.dumps({"email": EMAIL, "password": PASSWORD}).encode()
     req = urllib.request.Request(

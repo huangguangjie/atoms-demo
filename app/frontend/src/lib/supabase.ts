@@ -31,6 +31,8 @@ export interface Project {
   cover_gradient: string;
   cover_emoji: string;
   views: number;
+  /** T16:关联的来源会话(id),详情页刷新后按会话回放生成应用 */
+  conversation_id?: string | null;
   /** 生成的单文件应用 HTML,项目预览回放用 */
   app_html?: string | null;
 }
@@ -509,6 +511,27 @@ export async function deleteConversation(userId: string, conversationId: string)
   }
 }
 
+/** T16:读取会话关联的生成项目(详情页刷新后回放应用查看器) */
+export async function fetchConversationProject(
+  conversationId: string,
+  userId: string,
+): Promise<Project | null> {
+  if (!isSupabaseConfigured) {
+    return demoProjects.find((p) => p.user_id === userId && p.conversation_id === conversationId) ?? null;
+  }
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) {
+    throw new Error(`读取会话关联项目失败:${error.message}`);
+  }
+  return (data as Project[])[0] ?? null;
+}
+
 export interface CreateProjectInput {
   userId: string;
   spaceId: string | null;
@@ -517,6 +540,8 @@ export interface CreateProjectInput {
   source: ProjectSource;
   coverGradient?: string;
   coverEmoji?: string;
+  /** T16:来源会话 id(生成应用落库时关联,详情页刷新可回放) */
+  conversationId?: string | null;
   /** 生成的单文件应用 HTML(智能体生成/克隆魔改时落库,支持项目预览回放) */
   appHtml?: string;
 }
@@ -532,6 +557,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project 
     cover_gradient: input.coverGradient ?? randomGradient(),
     cover_emoji: input.coverEmoji ?? '📦',
     views: 0,
+    conversation_id: input.conversationId ?? null,
     ...(input.appHtml ? { app_html: input.appHtml } : {}),
   };
   if (!isSupabaseConfigured) {

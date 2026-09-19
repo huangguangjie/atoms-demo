@@ -6,7 +6,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatComposer, {
-  APP_THEMES,
   type AppThemeDef,
   type ComposerMode,
 } from '@/components/chat/ChatComposer';
@@ -50,7 +49,8 @@ export default function HomePage() {
 
   // 输入区状态(由 ChatComposer 承载交互,这里保存提交所需的值)
   const [prompt, setPrompt] = useState('');
-  const [theme, setTheme] = useState<AppThemeDef>(APP_THEMES[4]);
+  // T15:主题默认无选中(AppThemeDef | null),未选择时不高亮、不注入主题提示
+  const [theme, setTheme] = useState<AppThemeDef | null>(null);
   const [mode, setMode] = useState<ComposerMode>('goal');
 
   // 底部快捷区
@@ -117,7 +117,7 @@ export default function HomePage() {
       toast.warning(error instanceof Error ? error.message : '消息写入失败,对话内容可能不会保存');
     }
     window.dispatchEvent(new Event('atoms:conversations-updated'));
-    navigate(`/chat/${convId}`, { state: { initialPrompt: text, themeName: theme.name, mode } });
+    navigate(`/chat/${convId}`, { state: { initialPrompt: text, themeName: theme?.name, mode } });
   };
 
   /** 模板占位填写完成:占位值真实注入 HTML,落库并打开预览(首页模板快捷区共用) */
@@ -125,7 +125,7 @@ export default function HomePage() {
     setCreatingTemplate(true);
     try {
       const kind = TEMPLATE_CATEGORY_KIND[tpl.category] ?? 'landing';
-      const generated = buildDemoApp(`${tpl.title} ${tpl.category}`, theme.name, {
+      const generated = buildDemoApp(`${tpl.title} ${tpl.category}`, theme?.name ?? '默认', {
         kind,
         title: tpl.title,
         values,
@@ -211,6 +211,7 @@ export default function HomePage() {
             onThemeChange={setTheme}
             mode={mode}
             onModeChange={setMode}
+            referenceProjects={projects.map((p) => ({ id: p.id, name: p.name }))}
           />
         </div>
       </div>

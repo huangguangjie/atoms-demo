@@ -58,6 +58,9 @@ export function themeToPalette(theme: string): Palette {
       return { primary: '#5f7161', primarySoft: '#eef1ee', accent: '#8fa08f', bg: '#f4f6f3', card: '#ffffff', text: '#2f3a30', muted: '#6b7a6c', border: '#e2e8e2', dark: false };
     case 'White Beach':
       return { primary: '#0ea5e9', primarySoft: '#e0f2fe', accent: '#0369a1', bg: '#f8fdff', card: '#ffffff', text: '#0c4a6e', muted: '#5c7488', border: '#dbeafe', dark: false };
+    case '默认':
+      // T15:未选择主题时的中性色板(石板灰系,不用品牌色)
+      return { primary: '#334155', primarySoft: '#f1f5f9', accent: '#64748b', bg: '#f8fafc', card: '#ffffff', text: '#0f172a', muted: '#64748b', border: '#e2e8f0', dark: false };
     default:
       return { primary: '#7c3aed', primarySoft: '#f5f3ff', accent: '#c084fc', bg: '#fafafc', card: '#ffffff', text: '#1c1626', muted: '#6b7280', border: '#e8e4f0', dark: false };
   }

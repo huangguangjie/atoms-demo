@@ -17,10 +17,11 @@ const AppRoutes = () => (
   <Routes>
     <Route element={<AppLayout />}>
       <Route path="/" element={<HomePage />} />
-      <Route path="/chat/:conversationId" element={<ChatDetailPage />} />
       <Route path="/resources" element={<ResourcesPage />} />
       <Route path="/projects" element={<ProjectsPage />} />
     </Route>
+    {/* T16:详情页整页布局——不保留左侧全局导航,页内自带 Logo 返回与历史切换入口 */}
+    <Route path="/chat/:conversationId" element={<ChatDetailPage />} />
     <Route path="/auth/callback" element={<AuthCallback />} />
     <Route path="/auth/error" element={<AuthError />} />
     <Route path="*" element={<Navigate to="/" replace />} />

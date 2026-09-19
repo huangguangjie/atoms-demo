@@ -275,7 +275,8 @@ Deno.serve(async (req) => {
               `应用需求:${prompt}`,
               `意图识别:${intentLine}`,
               intent.assumptions.length ? `默认假设:${intent.assumptions.join(';')}` : '',
-              `界面主题:${theme}`,
+              // T15:主题为「默认」(用户未选择主题)时不注入主题提示,由模型按中性/自动配色决定
+              theme !== '默认' ? `界面主题:${theme}` : '',
             ]
               .filter(Boolean)
               .join('\n'),
@@ -312,7 +313,8 @@ Deno.serve(async (req) => {
   // ---- T9 第 3 步:代码生成(意图/布局指令/计划全部注入) ----
   const userPrompt = [
     `应用需求:${prompt}`,
-    `界面主题:${theme}`,
+    // T15:主题为「默认」(用户未选择主题)时不注入主题提示,由模型按中性/自动配色决定
+    theme !== '默认' ? `界面主题:${theme}` : '',
     `执行模式:${mode === 'goal' ? '按目标自动规划' : '逐步构建'}`,
     `意图识别:${intentLine}`,
     intent.assumptions.length ? `默认假设(未指明处按此实现):${intent.assumptions.join(';')}` : '',

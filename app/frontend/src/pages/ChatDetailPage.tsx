@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   AppWindow,
+  ArrowLeft,
   Check,
   ChevronDown,
   Cloud,
@@ -10,7 +11,6 @@ import {
   Eye,
   FileText,
   FolderOpen,
-  History,
   LineChart,
   MessagesSquare,
   MoreHorizontal,
@@ -44,8 +44,12 @@ import {
   createProject,
   fetchConversation,
   fetchConversationMessages,
+  fetchConversationProject,
+  fetchProjects,
+  fetchRecentConversations,
   insertMessage,
   type Conversation,
+  type Project,
 } from '@/lib/supabase';
 
 type CenterTab = 'overview' | 'editor' | 'cloud' | 'files' | 'growth';
@@ -176,14 +180,19 @@ export default function ChatDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [queue, setQueue] = useState<string[]>([]);
   const [prompt, setPrompt] = useState('');
-  const [theme, setTheme] = useState<AppThemeDef>(
-    () => APP_THEMES.find((t) => t.name === navState?.themeName) ?? APP_THEMES[4],
+  // T15:主题可为空——首页未选择主题时进入详情页同样保持无选中态
+  const [theme, setTheme] = useState<AppThemeDef | null>(
+    () => APP_THEMES.find((t) => t.name === navState?.themeName) ?? null,
   );
   const [mode, setMode] = useState<ComposerMode>(navState?.mode === 'build' ? 'build' : 'goal');
   const [app, setApp] = useState<DemoApp | null>(null);
   const [centerTab, setCenterTab] = useState<CenterTab>('overview');
   const [chatPanelOpen, setChatPanelOpen] = useState(true);
   const [following, setFollowing] = useState(true);
+  // T16:顶栏历史下拉(最近会话切换)与 # 引用菜单的项目列表
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<Conversation[]>([]);
+  const [refProjects, setRefProjects] = useState<Project[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -221,6 +230,36 @@ export default function ChatDetailPage() {
     };
   }, [conversationId, navigate]);
 
+  // T16:# 引用菜单项目列表(登录态就绪后加载;演示模式 demo-user 直接可用)
+  useEffect(() => {
+    if (!demoMode && !user) return;
+    fetchProjects(uid, false)
+      .then(setRefProjects)
+      .catch(() => setRefProjects([]));
+  }, [uid, demoMode, user]);
+
+  // T16:刷新后恢复会话关联的生成应用(项目 app_html 回放到应用查看器,不覆盖新生成的应用)
+  useEffect(() => {
+    if (!conversationId) return;
+    if (!demoMode && !user) return;
+    let cancelled = false;
+    fetchConversationProject(conversationId, uid)
+      .then((project) => {
+        if (cancelled) return;
+        const html = project?.app_html;
+        if (!html) return;
+        setApp((prev) => prev ?? {
+          title: project?.name ?? '生成应用',
+          kind: 'landing',
+          files: [{ name: 'index.html', content: html, language: 'html' }],
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, uid, demoMode, user]);
+
   // 消息流自动滚动到底部
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -239,6 +278,7 @@ export default function ChatDetailPage() {
         coverGradient: meta.gradient,
         coverEmoji: meta.emoji,
         appHtml: created.files[0].content,
+        conversationId: conversationId ?? null,
       });
       if (project) {
         toast.success(`项目「${created.title}」已保存到我的项目`);
@@ -285,10 +325,10 @@ export default function ChatDetailPage() {
     let errorMessage = '';
 
     try {
-      // 主题真实生效:所选主题名传入生成链路,中文主题指令注入提示词
+      // 主题真实生效:所选主题名传入生成链路;T15 未选择主题时传「默认」且不注入主题指令
       await runAgent({
-        prompt: `${text}\n界面主题:${theme.promptHint}`,
-        theme: theme.name,
+        prompt: theme ? `${text}\n界面主题:${theme.promptHint}` : text,
+        theme: theme?.name ?? '默认',
         mode,
         signal: controller.signal,
         onEvent: (event) => {
@@ -412,6 +452,15 @@ export default function ChatDetailPage() {
     toast.info('已停止生成');
   };
 
+  /** T16:打开顶栏历史下拉时拉取最近会话(与 Sidebar 同口径:当前工作区过滤) */
+  const loadHistory = (open: boolean) => {
+    setHistoryOpen(open);
+    if (!open) return;
+    fetchRecentConversations(uid, currentSpace?.id ?? undefined)
+      .then(setHistoryList)
+      .catch(() => setHistoryList([]));
+  };
+
   const handleShare = () => {
     const link = window.location.href;
     if (navigator.clipboard?.writeText) {
@@ -428,24 +477,53 @@ export default function ChatDetailPage() {
     <div className="flex h-full min-w-0 flex-col bg-background">
       {/* 顶栏:左中右三段 */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
-        {/* 左段:Logo + 会话名 + 历史版本 + 对话栏折叠 */}
+        {/* 左段:返回首页 + Logo + 会话名历史下拉(T16) + 对话栏折叠 */}
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-bold text-background">
-            A
-          </span>
-          <span className="max-w-[220px] truncate text-sm font-medium">
-            {conversation?.title ?? '对话'}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
-            title="历史版本"
-            onClick={() => toast.info('历史版本即将上线')}
+            className="h-8 w-8 shrink-0"
+            title="返回首页"
+            onClick={() => navigate('/')}
           >
-            <History className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4" />
           </Button>
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-bold text-background">
+            A
+          </span>
+          <DropdownMenu open={historyOpen} onOpenChange={loadHistory}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title="历史会话"
+                className="flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1 hover:bg-muted"
+              >
+                <span className="max-w-[200px] truncate text-sm font-medium">
+                  {conversation?.title ?? '对话'}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              {historyList.length === 0 && (
+                <p className="px-3 py-4 text-center text-xs text-muted-foreground">暂无最近会话</p>
+              )}
+              {historyList.map((item) => (
+                <DropdownMenuItem
+                  key={item.id}
+                  className="gap-2"
+                  onClick={() => {
+                    if (item.id !== conversationId) navigate(`/chat/${item.id}`);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  {item.id === conversationId && (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon"
@@ -595,6 +673,7 @@ export default function ChatDetailPage() {
                 onThemeChange={setTheme}
                 mode={mode}
                 onModeChange={setMode}
+                referenceProjects={refProjects.map((p) => ({ id: p.id, name: p.name }))}
               />
             </div>
           </div>
