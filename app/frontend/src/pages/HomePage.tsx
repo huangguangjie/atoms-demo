@@ -76,9 +76,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (loading) return;
+    // 云端模式未登录时不发起查询:uid 回退 'demo-user' 不是合法 uuid,REST 必返 400 噪声
+    if (loading || (!user && !demoMode)) return;
     fetchProjects(uid, false).then(setProjects).catch(() => setProjects([]));
-  }, [loading, uid]);
+  }, [loading, uid, user, demoMode]);
 
   /** T13:提交即建会话并跳转详情页,生成/流式/预览全部在详情页完成 */
   const handleSend = async () => {

@@ -183,13 +183,15 @@ function isTransientAgentError(message: string): boolean {
     || message.includes('Failed to fetch')
     || message.includes('NetworkError')
     || message.includes('network')
-    || /响应异常:5\d{2}/.test(message)
+    || /响应异常[:：]\s*(5\d{2}|429)/.test(message)
   );
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<void> {
   if (getSupabaseFunctionUrl(AGENT_FUNCTION_NAME)) {
-    const MAX_ATTEMPTS = 2; // 瞬时中断自动重试一次,仍失败才向 UI 透出真实错误
+    // T21:瞬时故障(网络抖动/5xx/429)自动重试 3 次,指数退避 1.2s→2.4s→4.8s;仍失败才向 UI 透出真实错误
+    const MAX_ATTEMPTS = 4;
+    const RETRY_DELAYS_MS = [1200, 2400, 4800];
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         await runEdgeAgent(options);
@@ -202,8 +204,11 @@ export async function runAgent(options: RunAgentOptions): Promise<void> {
         const message = error instanceof Error ? error.message : String(error);
         if (attempt < MAX_ATTEMPTS && isTransientAgentError(message)) {
           console.warn('[agent] 连接瞬时中断,自动重试:', message);
-          options.onEvent({ type: 'message', content: '连接出现瞬时中断,正在自动重试…' });
-          await sleep(1200);
+          options.onEvent({
+            type: 'message',
+            content: `连接出现瞬时中断,正在自动重试(${attempt}/${MAX_ATTEMPTS - 1})…`,
+          });
+          await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 4800);
           continue;
         }
         // Supabase 已配置时必须暴露真实报错,不允许静默回退演示智能体

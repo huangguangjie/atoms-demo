@@ -345,11 +345,11 @@ Deno.serve(async (req) => {
   let upstream: Response;
   try {
     upstream = await callGateway(userPrompt);
-    // 网关偶发 5xx(如 502):短暂退避后原地重试一次,避免整次生成直接失败
-    if (upstream.status >= 500) {
+    // 网关瞬时故障(5xx/429):短暂退避后原地重试一次,避免整次生成直接失败
+    if (upstream.status >= 500 || upstream.status === 429) {
       const detail = await upstream.text().catch(() => '');
       console.warn(JSON.stringify({ requestId, gatewayRetry: true, status: upstream.status, detail: detail.slice(0, 200) }));
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, upstream.status === 429 ? 2000 : 1500));
       upstream = await callGateway(userPrompt);
     }
   } catch (error) {
@@ -362,10 +362,15 @@ Deno.serve(async (req) => {
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => '');
     console.error(requestId, `AI 网关返回 ${upstream.status}`, detail.slice(0, 500));
-    return new Response(JSON.stringify({ error: `AI 服务响应异常(${upstream.status})` }), {
-      status: 502,
-      headers: jsonHeaders(),
-    });
+    // T21:上游状态码透传——429(限流)原样透出便于前端区分重试策略,其余按 502 网关故障处理
+    const isRateLimited = upstream.status === 429;
+    return new Response(
+      JSON.stringify({ error: isRateLimited ? 'AI 服务繁忙(429),请稍后重试' : `AI 服务响应异常(${upstream.status})` }),
+      {
+        status: isRateLimited ? 429 : 502,
+        headers: jsonHeaders(),
+      },
+    );
   }
 
   const eventHeaders = {

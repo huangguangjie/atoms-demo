@@ -95,6 +95,14 @@
     @apply border-border;
   }
 
+  /* T20:补全高度链——详情页 /chat/:id 根容器 h-full 依赖 #root 有确定高度,
+     否则整页塌陷为内容高度,左聊天区下方出现白色断层 */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
   }

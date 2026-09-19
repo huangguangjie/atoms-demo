@@ -83,6 +83,20 @@ function TabEmptyState({
   );
 }
 
+/** T21:错误文案指引——区分限流/上游网关故障/网络波动,给出可操作的重试指引而非裸状态码 */
+function friendlyErrorMessage(raw: string): string {
+  if (/429/.test(raw)) {
+    return `${raw}。请求触发限流,请稍候片刻再点击「重新生成」。`;
+  }
+  if (/响应异常[:：]\s*5\d{2}|AI 服务响应异常/.test(raw)) {
+    return `${raw}。AI 服务暂时不可用(上游网关波动),请稍后点击「重新生成」重试;若持续失败请等几分钟再试。`;
+  }
+  if (/连接中断|Failed to fetch|NetworkError/i.test(raw)) {
+    return `${raw}。网络波动导致连接中断,请点击「重新生成」重试。`;
+  }
+  return `${raw}。请点击「重新生成」重试,或调整需求描述后再试。`;
+}
+
 /** 应用查看器:iframe 实时预览 + 源码查看 + 刷新(生成完成后可用) */
 function AppViewer({ app }: { app: DemoApp }) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
@@ -193,6 +207,9 @@ export default function ChatDetailPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<Conversation[]>([]);
   const [refProjects, setRefProjects] = useState<Project[]>([]);
+  // T21:生成失败后的「重新生成」入口(保留用户输入与会话上下文,不重复落库用户消息)
+  const [failedPrompt, setFailedPrompt] = useState<string | null>(null);
+  const [lastErrorMessage, setLastErrorMessage] = useState('');
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -218,7 +235,15 @@ export default function ChatDetailPage() {
     fetchConversationMessages(conversationId)
       .then((rows) => {
         if (cancelled) return;
-        setMessages(rows.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+        const history = rows.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+        // T20:历史消息与本地消息合并而非整体覆盖——快速提交/生成中切换会话时,
+        // 避免拉取完成把本地已渲染的消息(含流式中的助手气泡)冲掉
+        setMessages((prev) => {
+          if (prev.length === 0) return history;
+          const seen = new Set(prev.map((m) => `${m.role}:${m.content}`));
+          const missing = history.filter((m) => !seen.has(`${m.role}:${m.content}`));
+          return [...missing, ...prev];
+        });
         setMessagesLoaded(true);
       })
       .catch((error) => {
@@ -316,6 +341,7 @@ export default function ChatDetailPage() {
       { id: assistantId, role: 'assistant', content: '', streaming: true },
     ]);
     setPrompt('');
+    setFailedPrompt(null);
     setGenerating(true);
 
     const controller = new AbortController();
@@ -323,6 +349,7 @@ export default function ChatDetailPage() {
     let firstMessage = '';
     let finalMessage = '';
     let errorMessage = '';
+    let planSteps: string[] = [];
 
     try {
       // 主题真实生效:所选主题名传入生成链路;T15 未选择主题时传「默认」且不注入主题指令
@@ -349,6 +376,7 @@ export default function ChatDetailPage() {
                   return { ...m, content: m.content ? `${m.content}\n\n${event.content}` : event.content };
                 }
                 case 'plan':
+                  planSteps = event.steps;
                   return {
                     ...m,
                     steps: event.steps.map(
@@ -377,6 +405,9 @@ export default function ChatDetailPage() {
                     content: event.stopped ? `${m.content}\n\n(已停止生成,可继续补充需求)` : m.content,
                   };
                 case 'error':
+                  // T21:记录失败需求与友好指引,消息流底部展示「重新生成」入口
+                  setFailedPrompt(text);
+                  setLastErrorMessage(friendlyErrorMessage(event.message));
                   return { ...m, streaming: false, content: `${m.content}\n\n生成出现问题:${event.message}` };
                 default:
                   return m;
@@ -389,10 +420,15 @@ export default function ChatDetailPage() {
       setGenerating(false);
       abortRef.current = null;
       const parts = [firstMessage, finalMessage].filter(Boolean);
+      // T20:计划步骤序列化落库——计划卡为实时结构化数据,历史回放以文本形式完整回显执行计划
+      const planText = planSteps.length > 0
+        ? `【执行计划】\n${planSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+        : '';
       // 错误同样如实落库:历史回放能看到失败的真实原因
-      const persisted = errorMessage
+      const bodyText = errorMessage
         ? `${parts.length > 0 ? `${parts.join('\n\n')}\n\n` : ''}生成出现问题:${errorMessage}`
         : parts.join('\n\n') || '生成已结束';
+      const persisted = planText ? `${planText}\n\n${bodyText}` : bodyText;
       try {
         await insertMessage(convId, 'assistant', persisted);
       } catch (error) {
@@ -450,6 +486,14 @@ export default function ChatDetailPage() {
   const handleStop = () => {
     abortRef.current?.abort();
     toast.info('已停止生成');
+  };
+
+  /** T21:失败后重新生成——用户消息已在上次请求时落库,不重复写入,直接续跑生成 */
+  const handleRegenerate = () => {
+    if (!failedPrompt || generating) return;
+    const text = failedPrompt;
+    setFailedPrompt(null);
+    void runFlow(text, { userInserted: true });
   };
 
   /** T16:打开顶栏历史下拉时拉取最近会话(与 Sidebar 同口径:当前工作区过滤) */
@@ -641,6 +685,26 @@ export default function ChatDetailPage() {
                     暂无消息,在下方输入需求开始与智能体对话。
                   </p>
                 )}
+                {/* T21:生成失败错误卡——保留需求原文与会话上下文,提供明确的重试入口 */}
+                {failedPrompt && !generating && (
+                  <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3">
+                    <p className="text-xs font-medium text-rose-200">生成失败</p>
+                    <p className="mt-1 break-words text-[11px] leading-5 text-rose-200/80">
+                      {lastErrorMessage}
+                    </p>
+                    <p className="mt-1.5 break-all text-[11px] leading-5 text-rose-200/60">
+                      需求已保留:「{failedPrompt}」,会话上下文未丢失,可直接重试。
+                    </p>
+                    <Button
+                      size="sm"
+                      className="mt-2 h-7 gap-1.5 rounded-full bg-rose-500 px-3 text-xs text-white hover:bg-rose-600"
+                      onClick={handleRegenerate}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      重新生成
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -707,7 +771,7 @@ export default function ChatDetailPage() {
                 <TabEmptyState
                   icon={AppWindow}
                   title="应用查看器"
-                  desc="智能体生成应用后会在这里实时预览,支持源码查看与刷新。"
+                  desc="智能体生成应用后会在这里实时预览,支持源码查看与刷新;若当时生成失败未产出应用,重新发送需求即可再次生成。"
                 />
               ))}
             {centerTab === 'editor' &&

@@ -10,6 +10,7 @@ import {
   FlaskConical,
   FolderOpen,
   KeyRound,
+  Palette,
   Paperclip,
   Plus,
   Search,
@@ -742,6 +743,8 @@ export default function ChatComposer({
                 compact && 'px-2',
               )}
             >
+              {/* T22:恢复主题触发按钮的图标(Palette),与输入区其他控件视觉一致;构建/目标框保持纯文字不变 */}
+              <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="max-w-[120px] truncate text-xs">{theme?.name ?? '主题'}</span>
               <ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform', themeOpen && 'rotate-180')} />
             </Button>
