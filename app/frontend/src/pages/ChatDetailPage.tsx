@@ -10,6 +10,7 @@ import {
   Code2,
   Eye,
   FileText,
+  FlaskConical,
   FolderOpen,
   LineChart,
   MessagesSquare,
@@ -88,6 +89,10 @@ function friendlyErrorMessage(raw: string): string {
   if (/429/.test(raw)) {
     return `${raw}。请求触发限流,请稍候片刻再点击「重新生成」。`;
   }
+  // T23:平台 AI 网关整体故障(主/备模型均失败)——显式指引演示模式入口,由用户主动选择
+  if (/平台 AI 网关故障/.test(raw)) {
+    return `${raw}。AI 上游服务持续不可用;可点击下方「使用演示模式生成」先用本地演示应用体验完整流程,稍后再点「重新生成」重试真实 AI。`;
+  }
   if (/响应异常[:：]\s*5\d{2}|AI 服务响应异常/.test(raw)) {
     return `${raw}。AI 服务暂时不可用(上游网关波动),请稍后点击「重新生成」重试;若持续失败请等几分钟再试。`;
   }
@@ -106,8 +111,14 @@ function AppViewer({ app }: { app: DemoApp }) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-background px-3">
         <span className="min-w-0 truncate text-sm font-medium">{app.title}</span>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-          生成应用
+        {/* T23:演示模式产物显式标注,与真实 AI 生成区分 */}
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-2 py-0.5 text-[10px]',
+            app.isDemo ? 'bg-amber-400/20 text-amber-300' : 'bg-muted text-muted-foreground',
+          )}
+        >
+          {app.isDemo ? '演示模式' : '生成应用'}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <div className="flex items-center rounded-lg bg-muted p-0.5">
@@ -214,7 +225,7 @@ export default function ChatDetailPage() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queueRef = useRef<string[]>([]);
-  const runFlowRef = useRef<(text: string, opts?: { userInserted?: boolean }) => Promise<void>>(
+  const runFlowRef = useRef<(text: string, opts?: { userInserted?: boolean; explicitDemo?: boolean }) => Promise<void>>(
     async () => undefined,
   );
   const bootstrappedRef = useRef(false);
@@ -298,7 +309,8 @@ export default function ChatDetailPage() {
         userId: uid,
         spaceId: currentSpace?.id ?? null,
         name: created.title,
-        description: `智能体生成的${meta.label}`,
+        // T23:演示模式产物在项目描述中明确标注,落库后项目页可辨识
+        description: created.isDemo ? `演示模式生成的${meta.label}` : `智能体生成的${meta.label}`,
         source: 'created',
         coverGradient: meta.gradient,
         coverEmoji: meta.emoji,
@@ -315,7 +327,7 @@ export default function ChatDetailPage() {
   };
 
   /** 完整生成流程:写入用户消息 → SSE 流式渲染 → 助手消息落库 → 队列续跑 */
-  const runFlow = async (text: string, opts?: { userInserted?: boolean }) => {
+  const runFlow = async (text: string, opts?: { userInserted?: boolean; explicitDemo?: boolean }) => {
     const convId = conversationId;
     if (!convId || !text.trim() || generating) return;
     if (!demoMode && !user) {
@@ -358,6 +370,8 @@ export default function ChatDetailPage() {
         theme: theme?.name ?? '默认',
         mode,
         signal: controller.signal,
+        // T23:显式演示模式由失败卡按钮触发,仅本次请求生效,不作为静默回退
+        explicitDemo: opts?.explicitDemo === true,
         onEvent: (event) => {
           if (event.type === 'app') {
             setApp(event.app);
@@ -494,6 +508,14 @@ export default function ChatDetailPage() {
     const text = failedPrompt;
     setFailedPrompt(null);
     void runFlow(text, { userInserted: true });
+  };
+
+  /** T23:失败后显式使用演示模式——用户主动触发的本地演示生成,非静默回退 */
+  const handleDemoGenerate = () => {
+    if (!failedPrompt || generating) return;
+    const text = failedPrompt;
+    setFailedPrompt(null);
+    void runFlow(text, { userInserted: true, explicitDemo: true });
   };
 
   /** T16:打开顶栏历史下拉时拉取最近会话(与 Sidebar 同口径:当前工作区过滤) */
@@ -702,6 +724,15 @@ export default function ChatDetailPage() {
                     >
                       <RefreshCw className="h-3 w-3" />
                       重新生成
+                    </Button>
+                    {/* T23:AI 网关故障时的显式演示模式入口——用户主动触发,仅本地生成真实可交互应用 */}
+                    <Button
+                      size="sm"
+                      className="mt-2 ml-2 h-7 gap-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 px-3 text-xs text-amber-200 hover:bg-amber-400/20"
+                      onClick={handleDemoGenerate}
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      使用演示模式生成
                     </Button>
                   </div>
                 )}

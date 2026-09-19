@@ -34,6 +34,8 @@ export interface RunAgentOptions {
   mode: AgentMode;
   signal: AbortSignal;
   onEvent: (event: AgentEvent) => void;
+  /** T23:显式演示模式(仅由用户在失败卡主动触发),只走本地演示智能体,不尝试 Edge Function */
+  explicitDemo?: boolean;
 }
 
 const AGENT_FUNCTION_NAME = 'app_atoms_agent_generate';
@@ -56,13 +58,15 @@ function planLabels(title: string): string[] {
 
 async function runDemoAgent(options: RunAgentOptions): Promise<void> {
   const { prompt, theme, mode, signal, onEvent } = options;
-  const app = buildDemoApp(prompt, theme);
+  // T23:演示产物携带 isDemo 标识,查看器据此标注「演示模式」;显式触发时消息同步声明
+  const app: DemoApp = { ...buildDemoApp(prompt, theme), isDemo: true };
   const stopped = () => signal.aborted;
   const modeWord = mode === 'build' ? '构建' : '按目标自动规划';
+  const demoPrefix = options.explicitDemo ? '【演示模式】' : '';
 
   onEvent({
     type: 'message',
-    content: `收到!我来帮你${modeWord}「${app.title}」。先拆解一下执行计划:`,
+    content: `${demoPrefix}收到!我来帮你${modeWord}「${app.title}」。先拆解一下执行计划:`,
   });
   await sleep(480);
   if (stopped()) {
@@ -107,7 +111,7 @@ async function runDemoAgent(options: RunAgentOptions): Promise<void> {
   onEvent({ type: 'app', app });
   onEvent({
     type: 'message',
-    content: `「${app.title}」已经生成完成!右侧预览可以直接体验,继续告诉我需要调整的地方即可。`,
+    content: `${demoPrefix}「${app.title}」已经生成完成(本地演示应用)!右侧预览可以直接体验;AI 服务恢复后可点击「重新生成」重新尝试真实生成。`,
   });
   onEvent({ type: 'done', stopped: false });
 }
@@ -138,7 +142,19 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
     signal: options.signal,
   });
   if (!response.ok || !response.body) {
-    throw new Error(`Edge Function 响应异常:${response.status}`);
+    // T23:透传服务端错误详情(如「平台 AI 网关故障」);保留状态码格式,维持 T21 瞬时故障重试判定不变
+    const detail = await response.text().catch(() => '');
+    let serverMessage = '';
+    try {
+      serverMessage = String((JSON.parse(detail) as { error?: string })?.error ?? '');
+    } catch {
+      // 非 JSON 错误体,忽略
+    }
+    throw new Error(
+      serverMessage
+        ? `Edge Function 响应异常:${response.status}(${serverMessage})`
+        : `Edge Function 响应异常:${response.status}`,
+    );
   }
 
   const reader = response.body.getReader();
@@ -188,6 +204,11 @@ function isTransientAgentError(message: string): boolean {
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<void> {
+  // T23:显式演示模式——仅由用户在失败卡主动触发,不尝试 Edge Function,也不作为静默回退
+  if (options.explicitDemo) {
+    await runDemoAgent(options);
+    return;
+  }
   if (getSupabaseFunctionUrl(AGENT_FUNCTION_NAME)) {
     // T21:瞬时故障(网络抖动/5xx/429)自动重试 3 次,指数退避 1.2s→2.4s→4.8s;仍失败才向 UI 透出真实错误
     const MAX_ATTEMPTS = 4;

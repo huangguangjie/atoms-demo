@@ -1,7 +1,8 @@
 // app_atoms_agent_generate:真实 AI 智能体生成(SSE 流式输出 AgentEvent)
 // 输入: { prompt, theme, mode }
 // 输出: text/event-stream,每行 data: <AgentEvent JSON>
-// 模型:deepseek-v4-flash(经平台 AI 网关,密钥来自 Edge Function Secrets;速度快以满足 150s 平台时限)
+// 模型:deepseek-v4-flash 主模型 + gpt-5.4 / gemini-3.1-pro-preview 备用通道
+//      (T23:主模型失败时同请求内按序降级,SSE 开始输出后不再切换;经平台 AI 网关,密钥来自 Secrets)
 // T9 提示词管线(意图识别 + 布局规划):
 //   1) 意图识别(确定性规则):识别应用类型/内容分区/关键功能,模糊需求注入默认假设;
 //   2) 布局规划:独立小调用产出含布局结构、Flex/Grid 策略、视觉规范与响应式的 5 步计划,
@@ -12,7 +13,8 @@
 //      超时/重试后仍不完整均以 error + done 显式收尾,绝不静默截断。
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const MODEL = 'deepseek-v4-flash';
+// T23:主模型 + 备用模型通道(按序降级);全部模型同报 403 视为平台 AI 网关整体故障,错误文案显式透出
+const MODELS = ['deepseek-v4-flash', 'gpt-5.4', 'gemini-3.1-pro-preview'];
 const MAX_TOKENS = 16000;
 // 平台约 150s 强制回收:规划调用(≤15s)+ 连接余量与代码生成共享该预算,到点主动收尾
 const SOFT_DEADLINE_MS = 130_000;
@@ -22,6 +24,8 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
 };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function jsonHeaders() {
   return { ...CORS, 'Content-Type': 'application/json' };
@@ -256,42 +260,43 @@ Deno.serve(async (req) => {
   let planSteps = fallbackSteps(intent);
   let planSource: 'llm' | 'fallback' = 'fallback';
   const planStartedAt = Date.now();
+  const planUserContent = [
+    `应用需求:${prompt}`,
+    `意图识别:${intentLine}`,
+    intent.assumptions.length ? `默认假设:${intent.assumptions.join(';')}` : '',
+    // T15:主题为「默认」(用户未选择主题)时不注入主题提示,由模型按中性/自动配色决定
+    theme !== '默认' ? `界面主题:${theme}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const planController = new AbortController();
+  const planTimer = setTimeout(() => planController.abort(), PLAN_DEADLINE_MS);
   try {
-    const controller = new AbortController();
-    const planTimer = setTimeout(() => controller.abort(), PLAN_DEADLINE_MS);
-    const planResp = await fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${aiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL,
-        stream: false,
-        max_tokens: 500,
-        enable_thinking: false,
-        messages: [
-          { role: 'system', content: PLAN_SYSTEM },
-          {
-            role: 'user',
-            content: [
-              `应用需求:${prompt}`,
-              `意图识别:${intentLine}`,
-              intent.assumptions.length ? `默认假设:${intent.assumptions.join(';')}` : '',
-              // T15:主题为「默认」(用户未选择主题)时不注入主题提示,由模型按中性/自动配色决定
-              theme !== '默认' ? `界面主题:${theme}` : '',
-            ]
-              .filter(Boolean)
-              .join('\n'),
-          },
-        ],
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(planTimer);
-    if (planResp.ok) {
-      const data = await planResp.json();
-      const text = String(data?.choices?.[0]?.message?.content ?? '');
-      const m = text.match(/\[[\s\S]*\]/);
-      const arr = m ? JSON.parse(m[0]) : null;
-      if (Array.isArray(arr)) {
+    // T23:规划调用共享 15s 独立预算,主→备模型按序尝试;全部失败回退启发式计划,规划失败不阻断生成
+    for (const model of MODELS) {
+      if (planController.signal.aborted) break;
+      try {
+        const planResp = await fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${aiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            stream: false,
+            max_tokens: 500,
+            enable_thinking: false,
+            messages: [
+              { role: 'system', content: PLAN_SYSTEM },
+              { role: 'user', content: planUserContent },
+            ],
+          }),
+          signal: planController.signal,
+        });
+        if (!planResp.ok) continue;
+        const data = await planResp.json();
+        const text = String(data?.choices?.[0]?.message?.content ?? '');
+        const m = text.match(/\[[\s\S]*\]/);
+        const arr = m ? JSON.parse(m[0]) : null;
+        if (!Array.isArray(arr)) continue;
         const steps = arr
           .filter((s) => typeof s === 'string' && s.trim())
           .map((s) => String(s).trim())
@@ -299,11 +304,17 @@ Deno.serve(async (req) => {
         if (steps.length === 5) {
           planSteps = steps;
           planSource = 'llm';
+          break;
         }
+      } catch (error) {
+        // 预算耗尽(abort)直接放弃规划;单个模型网络异常则尝试下一个备用模型
+        if (planController.signal.aborted) break;
+        console.warn(JSON.stringify({ requestId, planModelFailed: model, reason: String(error).slice(0, 160) }));
+        continue;
       }
     }
-  } catch (error) {
-    console.warn(JSON.stringify({ requestId, planFallback: true, reason: String(error).slice(0, 160) }));
+  } finally {
+    clearTimeout(planTimer);
   }
   const planMs = Date.now() - planStartedAt;
   console.log(
@@ -326,12 +337,12 @@ Deno.serve(async (req) => {
     .filter(Boolean)
     .join('\n');
 
-  const callGateway = (userContent: string) =>
+  const callGateway = (userContent: string, model: string) =>
     fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${aiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         stream: true,
         max_tokens: MAX_TOKENS,
         enable_thinking: false,
@@ -342,36 +353,55 @@ Deno.serve(async (req) => {
       }),
     });
 
-  let upstream: Response;
-  try {
-    upstream = await callGateway(userPrompt);
-    // 网关瞬时故障(5xx/429):短暂退避后原地重试一次,避免整次生成直接失败
-    if (upstream.status >= 500 || upstream.status === 429) {
-      const detail = await upstream.text().catch(() => '');
-      console.warn(JSON.stringify({ requestId, gatewayRetry: true, status: upstream.status, detail: detail.slice(0, 200) }));
-      await new Promise((resolve) => setTimeout(resolve, upstream.status === 429 ? 2000 : 1500));
-      upstream = await callGateway(userPrompt);
+  // T23:主模型失败(连接异常/4xx/5xx/限流)时在同一次请求内按序尝试备用模型;
+  // 同一模型遇 5xx/429 先短暂退避原地重试一次(T21 韧性保留),仍失败才降级到下一个模型。
+  // 拿到可读流即锁定该模型,SSE 透传开始后不再切换(截断重试也沿用同一模型)。
+  // 预算守卫:剩余软超时不足 15s 时停止降级,直接显式失败,避免被平台强制回收。
+  let upstream: Response | null = null;
+  let activeModel = '';
+  const triedModels: { model: string; status: string }[] = [];
+  outer: for (const model of MODELS) {
+    for (let sameModelAttempt = 1; sameModelAttempt <= 2; sameModelAttempt += 1) {
+      if (Date.now() - requestStartedAt > SOFT_DEADLINE_MS - 15_000) break outer;
+      try {
+        const resp = await callGateway(userPrompt, model);
+        if (resp.ok && resp.body) {
+          upstream = resp;
+          activeModel = model;
+          break outer;
+        }
+        const detail = await resp.text().catch(() => '');
+        triedModels.push({ model, status: String(resp.status) });
+        console.warn(JSON.stringify({ requestId, modelFallback: true, model, status: resp.status, detail: detail.slice(0, 200) }));
+        if ((resp.status >= 500 || resp.status === 429) && sameModelAttempt === 1) {
+          await sleep(resp.status === 429 ? 2000 : 1500);
+          continue;
+        }
+        // 4xx(含 403)或同一模型二连失败:降级到下一个备用模型
+        break;
+      } catch (error) {
+        triedModels.push({ model, status: 'connection-error' });
+        console.warn(JSON.stringify({ requestId, modelFallback: true, model, error: String(error).slice(0, 200) }));
+        break;
+      }
     }
-  } catch (error) {
-    console.error(requestId, 'AI 网关连接失败', error);
-    return new Response(JSON.stringify({ error: 'AI 服务连接失败' }), {
-      status: 502,
-      headers: jsonHeaders(),
-    });
   }
-  if (!upstream.ok || !upstream.body) {
-    const detail = await upstream.text().catch(() => '');
-    console.error(requestId, `AI 网关返回 ${upstream.status}`, detail.slice(0, 500));
-    // T21:上游状态码透传——429(限流)原样透出便于前端区分重试策略,其余按 502 网关故障处理
-    const isRateLimited = upstream.status === 429;
+  if (!upstream) {
+    // T23:全部模型同报 403 → 平台 AI 网关整体故障,给出明确文案;其余按各模型状态汇总透出
+    const allForbidden = triedModels.length > 0 && triedModels.every((t) => t.status === '403');
+    const summary = triedModels.map((t) => `${t.model}:${t.status}`).join(', ');
+    console.error(JSON.stringify({ requestId, allModelsFailed: true, triedModels }));
     return new Response(
-      JSON.stringify({ error: isRateLimited ? 'AI 服务繁忙(429),请稍后重试' : `AI 服务响应异常(${upstream.status})` }),
-      {
-        status: isRateLimited ? 429 : 502,
-        headers: jsonHeaders(),
-      },
+      JSON.stringify({
+        error: allForbidden
+          ? '平台 AI 网关故障,请稍后重试'
+          : `AI 服务响应异常(${summary || '网关无响应'})`,
+      }),
+      { status: 502, headers: jsonHeaders() },
     );
   }
+  // 闭包内 TS 不保留可变变量判空收窄:选定响应固化为常量,流内截断重试改用局部变量
+  const selectedUpstream: Response = upstream;
 
   const eventHeaders = {
     ...CORS,
@@ -409,6 +439,7 @@ Deno.serve(async (req) => {
       let timedOut = false;
       let finishReason: string | null = null;
       let retried = false;
+      let currentUpstream: Response = selectedUpstream;
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         if (attempt === 2) {
@@ -418,20 +449,21 @@ Deno.serve(async (req) => {
           send({ type: 'message', content: '首轮生成未完整结束,正在用更精简的方案重试…' });
           html = '';
           try {
-            upstream = await callGateway(userPrompt + RETRY_SUFFIX);
+            const retryResp = await callGateway(userPrompt + RETRY_SUFFIX, activeModel);
+            if (!retryResp.ok || !retryResp.body) {
+              const detail = await retryResp.text().catch(() => '');
+              console.error(requestId, `重试时 AI 网关返回 ${retryResp.status}`, detail.slice(0, 300));
+              break;
+            }
+            currentUpstream = retryResp;
           } catch (error) {
             console.error(requestId, '重试连接 AI 网关失败', error);
-            break;
-          }
-          if (!upstream.ok || !upstream.body) {
-            const detail = await upstream.text().catch(() => '');
-            console.error(requestId, `重试时 AI 网关返回 ${upstream.status}`, detail.slice(0, 300));
             break;
           }
           retried = true;
         }
 
-        const reader = upstream.body!.getReader();
+        const reader = currentUpstream.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
         try {
@@ -525,12 +557,14 @@ Deno.serve(async (req) => {
       console.log(
         JSON.stringify({
           requestId,
+          model: activeModel,
           outputLength: finalHtml.length,
           planSource,
           planMs,
           timedOut,
           finishReason,
           retried,
+          triedModels,
         }),
       );
     },

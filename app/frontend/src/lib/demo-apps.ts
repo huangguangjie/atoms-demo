@@ -16,6 +16,8 @@ export interface DemoApp {
   title: string;
   kind: DemoAppKind;
   files: DemoFile[];
+  /** T23:演示模式产物标识(本地演示智能体生成时为 true,查看器据此标注「演示模式」) */
+  isDemo?: boolean;
 }
 
 /** 主题色板:输入区选择的生成主题映射为具体配色 */
