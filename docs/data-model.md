@@ -71,8 +71,12 @@
 | user_id | uuid | → `auth.users.id` |
 | space_id | uuid | → `spaces.id`;会话始终归属当前工作区(首页发起对话写入 `currentSpace.id`,无工作区时被守卫拦截) |
 | title | text | 会话标题,默认「新对话」(首条提示词摘要) |
+| is_favorite | boolean | 是否收藏(005 迁移新增),收藏优先排序且豁免「最近 5 条」归档规则 |
+| status | text | 会话状态(007 迁移新增),`active`(默认)/ `archived`;归档仅隐藏不删除数据 |
 
 `updated_at` 由 messages 插入触发器自动刷新,作为侧边栏「最近对话」排序依据。
+
+归档语义(T26):`status='archived'` 的会话不出现在侧边栏最近对话与详情页历史下拉(查询统一附加 `status=eq.active`),直接访问其旧链接时提示「该会话已归档」并回落首页;会话行、消息、关联项目与版本快照全部保留,可通过将 `status` 改回 `active` 恢复(RLS 允许属主 UPDATE)。一次性归档脚本 `app/backend/scripts/t26_archive_conversations.sql` 仅处理指定账号,规则为「保留最近 5 条 + 收藏豁免」,不跨账号、不删除任何数据。
 
 ### 2.5 messages(消息)
 

@@ -484,9 +484,27 @@ export default function ChatDetailPage() {
     setVersions([]);
     setViewingVersionId(null);
     setEditing(false);
-    fetchConversation(conversationId)
+    // T26:归档会话对前端不可见(fetchConversation 过滤 status='active')。
+    // 直达旧链接时先重试一次,排除瞬时 RLS/JWT 抖动,确认不可见再提示并返回首页。
+    const loadConversation = (retry: boolean): Promise<Conversation | null> =>
+      fetchConversation(conversationId).catch(() => null).then((conv) => {
+        if (conv || !retry) return conv;
+        return new Promise<Conversation | null>((resolve) => {
+          setTimeout(() => {
+            void fetchConversation(conversationId)
+              .catch(() => null)
+              .then(resolve);
+          }, 800);
+        });
+      });
+    loadConversation(true)
       .then((conv) => {
-        if (!cancelled) setConversation(conv);
+        if (cancelled) return;
+        setConversation(conv);
+        if (!conv) {
+          toast.error('该会话已归档,不再展示于最近对话');
+          navigate('/', { replace: true });
+        }
       })
       .catch(() => undefined);
     fetchConversationMessages(conversationId)

@@ -2,7 +2,7 @@
 
 一个还原 [Atoms](https://atoms.dev) 产品形态的智能体应用平台:用户在首页输入应用创意,智能体产出分步计划、流式生成代码,并在应用查看器中实时预览可运行的单文件 HTML 应用。全栈使用 Supabase(项目 pofchtyjqwevchiiqags):Auth 认证、Postgres/RLS 数据持久化、Edge Functions 承载 AI 生成与语音转写;未配置 Supabase 环境变量时自动降级为演示模式(浏览器内存数据)。
 
-## 功能全景(T1–T25)
+## 功能全景(T1–T26)
 
 ### 全局框架
 - 左右分栏布局:左侧边栏可折叠、可拖拽调宽(react-resizable-panels)
@@ -44,6 +44,7 @@
 - 模板占位生成:模板卡片弹出占位填写弹窗,填写后替换占位内容并落库、可回放
 - 我的项目:全部/已收藏切换、收藏/取消收藏、项目卡片打开回放
 - 会话操作:收藏(星标排序)、行内重命名、删除二次确认、消息级联删除
+- 会话归档(T26):`conversations.status`(`active`/`archived`)仅隐藏不删除数据;最近会话列表与单会话读取按 `status='active'` 过滤,收藏会话豁免「最近 5 条」限制;归档会话的旧链接直达时提示「该会话已归档」并回落首页,不误伤活跃会话
 
 ## 目录结构
 
@@ -59,7 +60,7 @@
 ├── app/
 │   ├── frontend/
 │   │   ├── src/              # 页面、组件、数据层、智能体运行器
-│   │   └── t*-*.mjs          # 浏览器回归走查脚本(T7/T8/T9/T10/T13/T22/T23/T25)
+│   │   └── t*-*.mjs          # 浏览器回归走查脚本(T7/T8/T9/T10/T13/T22/T23/T25/T26)
 │   └── backend/
 │       ├── functions/        # Edge Functions(app_atoms_agent_generate、app_atoms_transcribe_audio)
 │       ├── migrations/       # SQL 迁移(建表/RLS/触发器/索引)

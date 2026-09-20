@@ -1,0 +1,75 @@
+{
+  "steps": [
+    {
+      "name": "T26-01 注册测试账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "T26-02 登录注入并进入首页",
+      "ok": true,
+      "detail": "t26-1789923607879 的 Atoms"
+    },
+    {
+      "name": "T26-03 构造 7 条会话(C6 归档 / C7 收藏豁免)",
+      "ok": true,
+      "detail": "space=ok"
+    },
+    {
+      "name": "T26-04 归档会话 C6 消息落库",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "T26-05 侧边栏展示最近 5 条(C1-C5)",
+      "ok": true,
+      "detail": "true,true,true,true,true"
+    },
+    {
+      "name": "T26-06 收藏会话 C7(最旧)豁免展示",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T26-07 已归档 C6 不出现在侧边栏",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T26-08 直接打开活跃会话 C1 不被误判归档",
+      "ok": true,
+      "detail": "0b6b59de"
+    },
+    {
+      "name": "T26-09 历史下拉隐藏 C6 且展示收藏 C7",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T26-10 归档会话直达提示「该会话已归档」",
+      "ok": true,
+      "detail": "6a4bf8d2"
+    },
+    {
+      "name": "T26-11 归档会话直达回落到首页",
+      "ok": true,
+      "detail": "http://localhost:3000/"
+    },
+    {
+      "name": "T26-12 status=active 过滤恰为 6 条且不含 C6",
+      "ok": true,
+      "detail": "active=6"
+    },
+    {
+      "name": "T26-13 归档会话行与消息完整保留(不删除)",
+      "ok": true,
+      "detail": "row=1, msgs=2"
+    },
+    {
+      "name": "T26-14 控制台无未预期错误",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": []
+}

@@ -47,6 +47,8 @@ export interface Conversation {
   /** 收藏标记:侧边栏最近对话收藏项优先展示(T10) */
   is_favorite?: boolean;
   updated_at?: string;
+  /** T26:归档状态;archived 会话不删除数据,仅从侧边栏/历史/直达读取路径隐藏 */
+  status?: 'active' | 'archived';
 }
 
 export interface Message {
@@ -359,6 +361,7 @@ export async function fetchRecentConversations(
 ): Promise<Conversation[]> {
   if (!isSupabaseConfigured) {
     return demoConversations
+      .filter((c) => c.status !== 'archived')
       .filter((c) => !spaceId || c.space_id === spaceId)
       .sort((a, b) => {
         const fav = Number(Boolean(b.is_favorite)) - Number(Boolean(a.is_favorite));
@@ -367,7 +370,12 @@ export async function fetchRecentConversations(
       })
       .slice(0, 8);
   }
-  let query = supabase.from('conversations').select('*').eq('user_id', userId);
+  // T26:归档会话不再出现在最近对话/侧边栏/历史下拉(数据保留,仅隐藏)
+  let query = supabase
+    .from('conversations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'active');
   if (spaceId) query = query.eq('space_id', spaceId);
   const { data, error } = await query
     .order('is_favorite', { ascending: false })
@@ -444,15 +452,18 @@ export async function fetchConversationMessages(conversationId: string): Promise
   return (data as Message[]) ?? [];
 }
 
-/** 读取单个对话(详情页顶栏标题使用;RLS 保证只能读到自己的会话) */
+/** 读取单个对话(详情页顶栏标题使用;RLS 保证只能读到自己的会话)
+ * T26:归档会话按「不可见」处理返回 null,详情页据此提示并返回首页 */
 export async function fetchConversation(conversationId: string): Promise<Conversation | null> {
   if (!isSupabaseConfigured) {
-    return demoConversations.find((c) => c.id === conversationId) ?? null;
+    const demo = demoConversations.find((c) => c.id === conversationId);
+    return demo && demo.status !== 'archived' ? demo : null;
   }
   const { data, error } = await supabase
     .from('conversations')
     .select('*')
     .eq('id', conversationId)
+    .eq('status', 'active')
     .maybeSingle();
   if (error) {
     throw new Error(`读取对话失败:${error.message}`);

@@ -8,7 +8,7 @@
     {
       "name": "登录注入并进入首页",
       "ok": true,
-      "detail": "t23-1789921581942 的 Atoms"
+      "detail": "t23-1789923621068 的 Atoms"
     },
     {
       "name": "提交进入详情页",
@@ -74,7 +74,7 @@
   "consoleErrors": [
     "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
     "Failed to load resource: the server responded with a status of 402 ()",
-    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789921348065:152:15)\n    at async runAgent (http://localhost:",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789923214785:152:15)\n    at async runAgent (http://localhost:",
     "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
   ]
 }
