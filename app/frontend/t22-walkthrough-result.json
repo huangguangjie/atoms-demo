@@ -1,0 +1,90 @@
+{
+  "steps": [
+    {
+      "name": "注册新账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "登录注入并进入首页",
+      "ok": true,
+      "detail": "t22-1789921632744 的 Atoms"
+    },
+    {
+      "name": "T22 主题按钮恢复 Palette 图标",
+      "ok": true,
+      "detail": "palette=1"
+    },
+    {
+      "name": "主题按钮保留下拉箭头",
+      "ok": true,
+      "detail": "chevron=1"
+    },
+    {
+      "name": "T15 默认无选中(触发按钮中性文案「主题」)",
+      "ok": true,
+      "detail": "主题"
+    },
+    {
+      "name": "T18 构建/目标按钮无图标(未受 T22 影响)",
+      "ok": true,
+      "detail": "icons=0"
+    },
+    {
+      "name": "主题搜索空态提示",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "主题切换生效(触发按钮显示 Notion)",
+      "ok": true,
+      "detail": "Notion"
+    },
+    {
+      "name": "当前主题选中 ✓ 唯一",
+      "ok": true,
+      "detail": "check=1"
+    },
+    {
+      "name": "Esc 关闭主题菜单",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "窄屏下主题按钮可见(共用组件适配)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "提交进入详情页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页主题按钮恢复图标",
+      "ok": true,
+      "detail": "palette=1"
+    },
+    {
+      "name": "详情页携带所选主题(Notion)",
+      "ok": true,
+      "detail": "Notion"
+    },
+    {
+      "name": "T21 失败卡展示且提供重新生成入口",
+      "ok": true,
+      "detail": "点击成功(等待1s)"
+    },
+    {
+      "name": "T21 重新生成续跑生效",
+      "ok": true,
+      "detail": "error-again"
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 402 ()",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789921348065:152:15)\n    at async runAgent (http://localhost:"
+  ],
+  "badResponses": []
+}

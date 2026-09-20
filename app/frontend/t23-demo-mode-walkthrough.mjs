@@ -96,10 +96,10 @@ try {
   if (outcome !== 'error') throw new Error(`预期失败卡,实际 ${outcome}`);
   await page.screenshot({ path: '.tmp-t23-error-card.png' });
 
-  // 5) 失败卡内容:网关故障指引文案 + 「使用演示模式生成」入口(指引随失败卡异步渲染,需等待可见)
-  const guidance = await page.getByText(/AI 上游服务持续不可用/).first()
+  // 5) 失败卡内容:错误指引文案(T25 网关 402 余额不足 / T23 网关 502 故障均显式指引)+ 「使用演示模式生成」入口
+  const guidance = await page.getByText(/AI 上游服务持续不可用|额度已耗尽/).first()
     .waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
-  log('失败卡含网关故障显式指引文案', guidance);
+  log('失败卡含错误显式指引文案(402/502 均可)', guidance);
   const demoBtn = page.getByRole('button', { name: '使用演示模式生成' });
   await demoBtn.waitFor({ state: 'visible', timeout: 10000 });
   log('失败卡提供「使用演示模式生成」入口', true);

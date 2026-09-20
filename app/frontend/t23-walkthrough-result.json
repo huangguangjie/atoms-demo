@@ -1,0 +1,80 @@
+{
+  "steps": [
+    {
+      "name": "注册新账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "登录注入并进入首页",
+      "ok": true,
+      "detail": "t23-1789921581942 的 Atoms"
+    },
+    {
+      "name": "提交进入详情页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T23 无静默回退:网关故障显式失败卡",
+      "ok": true,
+      "detail": "outcome=error"
+    },
+    {
+      "name": "失败卡含错误显式指引文案(402/502 均可)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "失败卡提供「使用演示模式生成」入口",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "演示智能体启动且消息含【演示模式】标识",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "演示应用渲染于应用查看器",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "查看器显式标注「演示模式」徽标",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "演示应用 iframe 内容非空",
+      "ok": true,
+      "detail": "141 字符"
+    },
+    {
+      "name": "演示项目落库且描述标记「演示模式」",
+      "ok": true,
+      "detail": "番茄钟计时器25 分钟专注  | 演示模式生成的笔记应用 | app_html 6668 字符"
+    },
+    {
+      "name": "刷新回放:用户消息持久化",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新回放:演示模式助手消息持久化",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新后关联演示项目回放至查看器(T16)",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 402 ()",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789921348065:152:15)\n    at async runAgent (http://localhost:",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ]
+}

@@ -9,6 +9,8 @@ export interface ChatMessageData {
   steps?: AgentPlanStep[];
   codeProgress?: number;
   streaming?: boolean;
+  /** T25:演示模式产物标记(实时与历史回放统一展示,来源为消息 metadata) */
+  isDemo?: boolean;
 }
 
 /** 对话消息气泡:用户消息右侧,智能体消息(含计划卡与代码进度)左侧 */
@@ -29,6 +31,12 @@ export default function ChatMessage({ message }: { message: ChatMessageData }) {
         A
       </div>
       <div className="min-w-0 flex-1 space-y-2.5">
+        {/* T25:演示模式元数据徽标——历史回放与实时生成展示一致 */}
+        {message.isDemo && (
+          <span className="inline-flex w-fit items-center rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+            演示模式
+          </span>
+        )}
         {message.content && (
           <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
             {message.content}

@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
   }
 
   // 请求体解析(规范要求 try-catch,必填字段缺失返回 400)
-  let body: { prompt?: string; theme?: string; mode?: string };
+  let body: { prompt?: string; theme?: string; mode?: string; previousHtml?: string };
   try {
     body = await req.json();
   } catch {
@@ -215,6 +215,11 @@ Deno.serve(async (req) => {
   }
   const theme = String(body.theme ?? '默认');
   const mode = String(body.mode ?? 'build');
+  // T25:增量修改——携带上一版完整 HTML 时进入修改模式,基于当前版本做定向调整
+  const previousHtml =
+    typeof body.previousHtml === 'string' && body.previousHtml.includes('</html>')
+      ? body.previousHtml
+      : '';
   console.log(
     JSON.stringify({ requestId, method: req.method, promptLength: prompt.length, theme, mode }),
   );
@@ -246,6 +251,12 @@ Deno.serve(async (req) => {
       headers: jsonHeaders(),
     });
   }
+  // T25 排查:上游 Cloudflare WAF 会拦截无 User-Agent 的请求(error code 1010),显式携带 UA 保证网关可达
+  const aiHeaders = {
+    Authorization: `Bearer ${aiKey}`,
+    'Content-Type': 'application/json',
+    'User-Agent': 'atoms-agent/1.0',
+  };
 
   const requestStartedAt = Date.now();
 
@@ -257,7 +268,15 @@ Deno.serve(async (req) => {
   }`;
 
   // ---- T9 第 2 步:布局规划(独立小调用,超时/解析失败回退启发式计划) ----
-  let planSteps = fallbackSteps(intent);
+  // T25:增量修改模式——计划改为修改导向的确定性步骤,跳过 LLM 规划小调用,降低时延
+  let planSteps = previousHtml
+    ? [
+        '读取当前版本代码,定位需要修改的模块',
+        '应用本次修改,未涉及部分保持原样',
+        '校验交互与样式一致性,补齐响应式适配',
+        '输出修改后的完整单文件 HTML(禁止只给片段)',
+      ]
+    : fallbackSteps(intent);
   let planSource: 'llm' | 'fallback' = 'fallback';
   const planStartedAt = Date.now();
   const planUserContent = [
@@ -274,11 +293,12 @@ Deno.serve(async (req) => {
   try {
     // T23:规划调用共享 15s 独立预算,主→备模型按序尝试;全部失败回退启发式计划,规划失败不阻断生成
     for (const model of MODELS) {
-      if (planController.signal.aborted) break;
+      // T25:增量修改模式跳过 LLM 规划,直接使用上方确定性修改步骤
+      if (planController.signal.aborted || previousHtml) break;
       try {
         const planResp = await fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${aiKey}`, 'Content-Type': 'application/json' },
+          headers: aiHeaders,
           body: JSON.stringify({
             model,
             stream: false,
@@ -324,6 +344,15 @@ Deno.serve(async (req) => {
   // ---- T9 第 3 步:代码生成(意图/布局指令/计划全部注入) ----
   const userPrompt = [
     `应用需求:${prompt}`,
+    // T25:增量修改——把上一版完整 HTML 作为上下文注入,要求在原版本上定向修改
+    ...(previousHtml
+      ? [
+          '当前版本完整 HTML(在此基础上修改,除本次修改点外保持原样):',
+          '```html',
+          previousHtml,
+          '```',
+        ]
+      : []),
     // T15:主题为「默认」(用户未选择主题)时不注入主题提示,由模型按中性/自动配色决定
     theme !== '默认' ? `界面主题:${theme}` : '',
     `执行模式:${mode === 'goal' ? '按目标自动规划' : '逐步构建'}`,
@@ -332,7 +361,9 @@ Deno.serve(async (req) => {
     `布局指令:${layoutDirective}`,
     '既定执行计划(生成时必须遵循):',
     ...planSteps.map((s, i) => `${i + 1}. ${s}`),
-    '请严格按以上意图、布局指令与计划,直接给出完整单文件 HTML。',
+    previousHtml
+      ? '请在当前版本基础上完成上述修改,直接输出修改后的完整单文件 HTML(禁止只输出片段或差异说明)。'
+      : '请严格按以上意图、布局指令与计划,直接给出完整单文件 HTML。',
   ]
     .filter(Boolean)
     .join('\n');
@@ -340,7 +371,7 @@ Deno.serve(async (req) => {
   const callGateway = (userContent: string, model: string) =>
     fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${aiKey}`, 'Content-Type': 'application/json' },
+      headers: aiHeaders,
       body: JSON.stringify({
         model,
         stream: true,
@@ -371,7 +402,11 @@ Deno.serve(async (req) => {
           break outer;
         }
         const detail = await resp.text().catch(() => '');
-        triedModels.push({ model, status: String(resp.status) });
+        // T25 排查:403 需区分「账户余额不足」(业务错误,重试无意义)与网关拦截,按响应体归类
+        triedModels.push({
+          model,
+          status: /balance is insufficient/i.test(detail) ? 'insufficient-balance' : String(resp.status),
+        });
         console.warn(JSON.stringify({ requestId, modelFallback: true, model, status: resp.status, detail: detail.slice(0, 200) }));
         if ((resp.status >= 500 || resp.status === 429) && sameModelAttempt === 1) {
           await sleep(resp.status === 429 ? 2000 : 1500);
@@ -388,9 +423,17 @@ Deno.serve(async (req) => {
   }
   if (!upstream) {
     // T23:全部模型同报 403 → 平台 AI 网关整体故障,给出明确文案;其余按各模型状态汇总透出
+    // T25 排查:全部模型均「余额不足」属账户额度问题(确定性故障),以 402 显式区分,前端不做无谓重试
     const allForbidden = triedModels.length > 0 && triedModels.every((t) => t.status === '403');
+    const allBalance = triedModels.length > 0 && triedModels.every((t) => t.status === 'insufficient-balance');
     const summary = triedModels.map((t) => `${t.model}:${t.status}`).join(', ');
     console.error(JSON.stringify({ requestId, allModelsFailed: true, triedModels }));
+    if (allBalance) {
+      return new Response(JSON.stringify({ error: 'AI 账户余额不足,请充值后重试' }), {
+        status: 402,
+        headers: jsonHeaders(),
+      });
+    }
     return new Response(
       JSON.stringify({
         error: allForbidden
@@ -421,7 +464,9 @@ Deno.serve(async (req) => {
       const title = titleFromPrompt(prompt);
       send({
         type: 'message',
-        content: `收到!我来帮你${mode === 'goal' ? '按目标自动规划' : '构建'}「${title}」。先拆解一下执行计划:`,
+        content: previousHtml
+          ? `收到修改需求!我会在「${title}」当前版本基础上定向调整。执行计划如下:`
+          : `收到!我来帮你${mode === 'goal' ? '按目标自动规划' : '构建'}「${title}」。先拆解一下执行计划:`,
       });
       send({ type: 'plan', steps: planSteps });
       for (let i = 0; i < planSteps.length; i += 1) {
@@ -538,7 +583,9 @@ Deno.serve(async (req) => {
         });
         send({
           type: 'message',
-          content: `「${appTitle}」已经生成完成!右侧预览可以直接体验,继续告诉我需要调整的地方即可。`,
+          content: previousHtml
+            ? `修改完成!「${appTitle}」已更新,右侧预览可直接体验。`
+            : `「${appTitle}」已经生成完成!右侧预览可以直接体验,继续告诉我需要调整的地方即可。`,
         });
       }
       // 输出不完整或为空(含超时截断)时:显式透出真实错误,绝不静默结束

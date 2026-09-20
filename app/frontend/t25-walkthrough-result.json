@@ -1,0 +1,144 @@
+{
+  "steps": [
+    {
+      "name": "注册新账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "登录注入并进入首页",
+      "ok": true,
+      "detail": "t25-1789921500204 的 Atoms"
+    },
+    {
+      "name": "提交进入详情页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "真实 Edge Function 402 显式失败卡(无静默回退)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "失败卡含 402 余额不足专属指引文案",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "显式演示模式产出应用并标注徽标",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "演示项目落库(is_demo + 描述标记)",
+      "ok": true,
+      "detail": "番茄钟计时器25 分钟专注  | is_demo=true | app_html 6668 字符"
+    },
+    {
+      "name": "首轮生成写入 v1(首次生成)",
+      "ok": true,
+      "detail": "[\"v1:generation:首次生成\"]"
+    },
+    {
+      "name": "第二轮增量生成记录 v2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "v2 增量修改落库且 app_html 变化",
+      "ok": true,
+      "detail": "label=增量修改:给番茄钟增加休息提醒音效开关按钮,放在开始按钮旁边,其余保持不变 | app_html 6668 字符"
+    },
+    {
+      "name": "版本面板展示 v1/v2 与来源标签",
+      "ok": true,
+      "detail": "v1=true v2=true"
+    },
+    {
+      "name": "版本切换查看(v1 提示条 + 快照状态)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "返回最新退出历史查看",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "回滚确认条明确「创建新版本不覆盖快照」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "回滚完成并创建 v3",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "v3 回滚版本落库且内容与 v1 快照一致",
+      "ok": true,
+      "detail": "v1:generation,v2:generation,v3:rollback"
+    },
+    {
+      "name": "v1/v2 旧快照保留",
+      "ok": true,
+      "detail": "v1=true v2=true"
+    },
+    {
+      "name": "回滚后项目 app_html 与 v1 快照一致",
+      "ok": true,
+      "detail": "项目 6668 vs v1 6668 字符"
+    },
+    {
+      "name": "在线编辑保存并记录 v4",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "v4 修改版本落库且项目 app_html 含编辑特征",
+      "ok": true,
+      "detail": "label=在线编辑 | 含特征=true"
+    },
+    {
+      "name": "导出 HTML 文件内容与当前版本一致",
+      "ok": true,
+      "detail": "给番茄钟增加休息提醒音效开关.html | 6698 字符"
+    },
+    {
+      "name": "刷新回放:两轮用户消息持久化",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新回放:【演示模式】标识恢复(两轮)",
+      "ok": true,
+      "detail": "2 处"
+    },
+    {
+      "name": "刷新回放:计划卡按 metadata 恢复",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新回放:查看器演示徽标恢复(is_demo)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新回放:版本列表恢复(4 个版本齐全)",
+      "ok": true,
+      "detail": "历史版本 v4 修改 在线编辑 9/20/2026, 9:25:23 AM · 6.5 KB v3 回滚 回滚至 v1 9/20/2026, 9:25:21 AM · 6.5 KB v2 生成 增量修改:给番茄钟增加休息提醒音效开关按钮,放"
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "[sidebar] 读取最近对话失败: Error: 读取最近对话失败:JWT issued at future\n    at fetchRecentConversations (http://localhost:3000/src/lib/supabase.ts?t=1789921348065:444:15)",
+    "Failed to load resource: the server responded with a status of 402 ()",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789921348065:152:15)\n    at async runAgent (http://localhost:",
+    "Failed to load resource: the server responded with a status of 402 ()",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789921348065:152:15)\n    at async runAgent (http://localhost:",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ]
+}

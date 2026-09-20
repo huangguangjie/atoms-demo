@@ -36,6 +36,8 @@ export interface RunAgentOptions {
   onEvent: (event: AgentEvent) => void;
   /** T23:显式演示模式(仅由用户在失败卡主动触发),只走本地演示智能体,不尝试 Edge Function */
   explicitDemo?: boolean;
+  /** T25:增量修改——当前版本完整 HTML,携带时 Edge Function 进入修改模式 */
+  previousHtml?: string;
 }
 
 const AGENT_FUNCTION_NAME = 'app_atoms_agent_generate';
@@ -138,6 +140,8 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
       prompt: options.prompt,
       theme: options.theme,
       mode: options.mode,
+      // T25:增量修改——已有产物时携带上一版 HTML,服务端按修改模式生成
+      ...(options.previousHtml ? { previousHtml: options.previousHtml } : {}),
     }),
     signal: options.signal,
   });

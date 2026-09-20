@@ -83,7 +83,8 @@ try {
 
   // 4) 中部页签切换:编辑器/云/文件/增长空态 → 回到概览
   await clickCenterTab('编辑器');
-  const editorEmpty = await page.getByText('应用生成后可在此查看源码').isVisible().catch(() => false);
+  // T25 后编辑器空态文案为「在线编辑 HTML」(原只读源码),断言适配当前文案
+  const editorEmpty = await page.getByText('应用生成后可在此在线编辑').isVisible().catch(() => false);
   await clickCenterTab('Atoms 云');
   const cloudEmpty = await page.getByText('数据库、存储与云端资源管理即将开放').isVisible().catch(() => false);
   await clickCenterTab('文件');
@@ -126,7 +127,11 @@ try {
   log('停止生成可控', true);
 
   // 9) 应用查看器:iframe 预览 + 源码页签(生成未产出应用时优雅降级,不让脚本异常中断)
-  const gatewayDown = result.consoleErrors.some((e) => e.includes('502') || e.includes('403'));
+  // 402(AI 账户余额不足)与 502/403 同属外部故障窗口:真实生成不可用、项目不落库为预期,
+  // 演示模式下的查看器/落库链路由 t23/t25 走查覆盖。
+  const gatewayDown = result.consoleErrors.some(
+    (e) => e.includes('502') || e.includes('403') || e.includes('402'),
+  );
   let frameTitle = '';
   let codeVisible = false;
   try {

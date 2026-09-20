@@ -35,6 +35,8 @@ export interface Project {
   conversation_id?: string | null;
   /** 生成的单文件应用 HTML,项目预览回放用 */
   app_html?: string | null;
+  /** T25:项目级演示模式标记(刷新恢复后查看器徽标与项目描述保持一致) */
+  is_demo?: boolean;
 }
 
 export interface Conversation {
@@ -52,6 +54,14 @@ export interface Message {
   conversation_id: string;
   role: 'user' | 'assistant';
   content: string;
+  /** T25:消息级元数据(演示模式标记等),持久化后刷新回放仍保持展示一致 */
+  metadata?: MessageMeta | null;
+}
+
+/** T25:消息元数据(isDemo=演示模式产物;plan=执行计划步骤,刷新回放恢复徽标与计划卡) */
+export interface MessageMeta {
+  isDemo?: boolean;
+  plan?: string[];
 }
 
 export interface CommunityApp {
@@ -249,6 +259,9 @@ let demoProjects: Project[] = [
   { id: 'dp-3', user_id: 'demo-user', space_id: 'demo-space', name: 'Blog Starter 实例', description: '基于 Blog Starter 模板创建', source: 'template', favorite: false, cover_gradient: 'from-emerald-500 to-teal-400', cover_emoji: '✍️', views: 3 },
 ];
 
+/** T25:演示模式(未配置 Supabase)的内存版本历史 */
+const demoVersions = new Map<string, ProjectVersion[]>();
+
 function demoId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -398,17 +411,18 @@ export async function insertMessage(
   conversationId: string,
   role: 'user' | 'assistant',
   content: string,
+  metadata?: MessageMeta,
 ): Promise<void> {
   if (!isSupabaseConfigured) {
     demoMessages = [
       ...demoMessages,
-      { id: demoId('msg'), conversation_id: conversationId, role, content },
+      { id: demoId('msg'), conversation_id: conversationId, role, content, metadata: metadata ?? null },
     ];
     return;
   }
   const { error } = await supabase
     .from('messages')
-    .insert({ conversation_id: conversationId, role, content });
+    .insert({ conversation_id: conversationId, role, content, ...(metadata ? { metadata } : {}) });
   if (error) {
     throw new Error(`消息写入失败:${error.message}`);
   }
@@ -544,6 +558,8 @@ export interface CreateProjectInput {
   conversationId?: string | null;
   /** 生成的单文件应用 HTML(智能体生成/克隆魔改时落库,支持项目预览回放) */
   appHtml?: string;
+  /** T25:演示模式产物标记(项目页与详情页回放时徽标一致) */
+  isDemo?: boolean;
 }
 
 export async function createProject(input: CreateProjectInput): Promise<Project | null> {
@@ -558,6 +574,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project 
     cover_emoji: input.coverEmoji ?? '📦',
     views: 0,
     conversation_id: input.conversationId ?? null,
+    is_demo: input.isDemo ?? false,
     ...(input.appHtml ? { app_html: input.appHtml } : {}),
   };
   if (!isSupabaseConfigured) {
@@ -600,6 +617,136 @@ export async function toggleProjectFavorite(project: Project): Promise<void> {
     .eq('id', project.id);
   if (error) {
     throw new Error(`更新收藏状态失败:${error.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// T25:项目产物版本历史(版本号/来源/标签/app_html 快照)
+// ---------------------------------------------------------------------------
+
+export type ProjectVersionSource = 'generation' | 'edit' | 'rollback';
+
+export interface ProjectVersion {
+  id: string;
+  project_id: string;
+  version_number: number;
+  source: ProjectVersionSource;
+  label: string;
+  app_html: string;
+  created_at: string;
+}
+
+export const PROJECT_VERSION_SOURCE_LABEL: Record<ProjectVersionSource, string> = {
+  generation: '生成',
+  edit: '修改',
+  rollback: '回滚',
+};
+
+/**
+ * 读取项目版本历史(版本号倒序;RLS 保证只能读到自己的项目版本)
+ * T25 韧性:刷新恢复阶段偶发出现请求已发出但长期无响应(浏览器侧连接被占用/网关挂起),
+ * 导致版本面板停留在「暂无版本记录」。仅用 Promise.race 计时并不会取消底层请求,
+ * 挂起的连接会一直占用同一 host 的连接池,后续重试同样排队,表现为「永远拿不到数据」。
+ * 这里改为 AbortController + abortSignal 真正中断超时请求,释放连接后再重试(最多 3 次)。
+ */
+export async function fetchProjectVersions(projectId: string): Promise<ProjectVersion[]> {
+  if (!isSupabaseConfigured) {
+    return (demoVersions.get(projectId) ?? [])
+      .slice()
+      .sort((a, b) => b.version_number - a.version_number);
+  }
+
+  const attemptOnce = async (): Promise<ProjectVersion[]> => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 4000);
+    try {
+      const { data, error } = await supabase
+        .from('project_versions')
+        .select('id, project_id, version_number, source, label, app_html, created_at')
+        .eq('project_id', projectId)
+        .order('version_number', { ascending: false })
+        .abortSignal(controller.signal);
+      if (error) throw new Error(error.message);
+      return (data as ProjectVersion[]) ?? [];
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('请求超时(4s,已中断重试)');
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await attemptOnce();
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+      }
+    }
+  }
+  throw new Error(`读取版本历史失败:${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+/** 写入一条版本快照(版本号由调用方按最新版本 + 1 递增,数据库唯一约束兜底) */
+export async function insertProjectVersion(input: {
+  projectId: string;
+  userId: string;
+  versionNumber: number;
+  source: ProjectVersionSource;
+  label: string;
+  appHtml: string;
+}): Promise<void> {
+  if (!isSupabaseConfigured) {
+    const list = demoVersions.get(input.projectId) ?? [];
+    demoVersions.set(input.projectId, [
+      ...list,
+      {
+        id: demoId('ver'),
+        project_id: input.projectId,
+        version_number: input.versionNumber,
+        source: input.source,
+        label: input.label,
+        app_html: input.appHtml,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    return;
+  }
+  const { error } = await supabase.from('project_versions').insert({
+    project_id: input.projectId,
+    user_id: input.userId,
+    version_number: input.versionNumber,
+    source: input.source,
+    label: input.label,
+    app_html: input.appHtml,
+  });
+  if (error) {
+    throw new Error(`写入版本记录失败:${error.message}`);
+  }
+}
+
+/** 更新项目当前产物(增量修改/回滚/在线编辑后同步 projects.app_html) */
+export async function updateProjectAppHtml(
+  projectId: string,
+  appHtml: string,
+  isDemo?: boolean,
+): Promise<void> {
+  const patch: Record<string, unknown> = { app_html: appHtml };
+  if (isDemo !== undefined) patch.is_demo = isDemo;
+  if (!isSupabaseConfigured) {
+    demoProjects = demoProjects.map((p) =>
+      p.id === projectId ? { ...p, ...patch } as Project : p,
+    );
+    return;
+  }
+  const { error } = await supabase.from('projects').update(patch).eq('id', projectId);
+  if (error) {
+    throw new Error(`更新项目产物失败:${error.message}`);
   }
 }
 
