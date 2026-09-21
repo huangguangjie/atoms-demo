@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'path';
 import { viteSourceLocator } from '@metagptx/vite-plugin-source-locator';
@@ -24,6 +25,33 @@ process.env.VITE_APP_TITLE = escapeHtmlAttr(process.env.VITE_APP_TITLE);
 process.env.VITE_APP_DESCRIPTION = escapeHtmlAttr(process.env.VITE_APP_DESCRIPTION);
 process.env.VITE_APP_LOGO_URL ??= process.env.OVERVIEW_LOGO_URL ?? 'https://public-frontend-cos.metadl.com/mgx/img/favicon_atoms.ico';
 
+/**
+ * T31 部署溯源:把仓库提交信息注入构建产物,使「线上部署版本 ↔ 仓库 SHA」可追溯。
+ * 取值优先级:CI 环境变量(GITHUB_SHA / VERCEL_GIT_COMMIT_SHA 等)→ 本地 git rev-parse HEAD → unknown。
+ * 发布站点可在浏览器控制台执行 __ATOMS_BUILD__ 核对当前部署对应的提交。
+ */
+function resolveGitValue(args: string[], fallback: string): string {
+  try {
+    return execFileSync('git', args, { cwd: __dirname, encoding: 'utf8' }).trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function resolveBuildInfo() {
+  const env = process.env;
+  const sha = (env.GITHUB_SHA || env.VERCEL_GIT_COMMIT_SHA || env.CI_COMMIT_SHA || env.GIT_COMMIT
+    || resolveGitValue(['rev-parse', 'HEAD'], 'unknown')).trim();
+  const ref = (env.GITHUB_REF_NAME || env.VERCEL_GIT_COMMIT_REF || env.CI_COMMIT_REF_NAME
+    || resolveGitValue(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown')).trim();
+  return {
+    sha,
+    shortSha: sha === 'unknown' ? 'unknown' : sha.slice(0, 7),
+    ref,
+    builtAt: new Date().toISOString(),
+  };
+}
+
 function ensureBuildOutDir() {
   let outDir = path.resolve(__dirname, 'dist');
 
@@ -46,8 +74,13 @@ function ensureBuildOutDir() {
 // https://vitejs.dev/config/
 export default defineConfig(({ command }) => {
   const blogPrerenderRoutes = command === 'build' ? getBlogRoutes() : [];
+  const buildInfo = resolveBuildInfo();
 
   return {
+    // T31:构建溯源标识(前端可读 __ATOMS_BUILD__)
+    define: {
+      __ATOMS_BUILD__: JSON.stringify(buildInfo),
+    },
     plugins: [
       viteSourceLocator({
         prefix: 'mgx', // Prefix used to identify source locations; do not change.

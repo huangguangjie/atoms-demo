@@ -3,6 +3,8 @@ import { Code2, Eye, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { DemoApp } from '@/lib/demo-apps';
+// T31:与详情页查看器统一沙箱策略(无 allow-same-origin + CSP + 守卫 shim)
+import { buildSandboxedPreview, PREVIEW_SANDBOX_ATTRIBUTES } from '@/lib/preview-sandbox';
 
 interface AppPreviewProps {
   app: DemoApp;
@@ -74,8 +76,8 @@ export default function AppPreview({ app, onClose }: AppPreviewProps) {
         <iframe
           key={frameKey}
           title={`${app.title} 预览`}
-          srcDoc={file.content}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
+          srcDoc={buildSandboxedPreview(file.content)}
+          sandbox={PREVIEW_SANDBOX_ATTRIBUTES}
           className="h-full w-full flex-1 bg-white"
         />
       ) : (
@@ -87,7 +89,7 @@ export default function AppPreview({ app, onClose }: AppPreviewProps) {
       {/* 状态栏 */}
       <div className="flex h-8 shrink-0 items-center gap-2 border-t bg-background px-3 text-[11px] text-muted-foreground">
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{file.name}</span>
-        <span>单文件应用 · 可直接运行</span>
+        <span>单文件应用 · 沙箱隔离运行</span>
       </div>
     </div>
   );

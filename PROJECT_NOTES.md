@@ -1,6 +1,6 @@
 # PROJECT_NOTES — 类 Atoms 全栈应用 · 实现笔记
 
-> 面向评审与后续迭代的说明:实现思路与关键取舍、架构设计、当前功能完成度(T1–T29)、计划功能优先级排期。
+> 面向评审与后续迭代的说明:实现思路与关键取舍、架构设计、当前功能完成度(T1–T31)、计划功能优先级排期。
 > 详细文档见 `docs/`(系统设计 / 数据模型 / 部署 / 使用说明),任务级进度明细见 `.atoms/PROGRESS.md`。
 
 ## 一、实现思路与关键取舍
@@ -70,12 +70,13 @@ SSE 事件协议:`message / plan / step-* / code-delta / app / done / error`;130
 ```
 
 ### 5. 数据模型与 RLS
-- 表:profiles、spaces、projects、conversations、messages、community_apps、templates、project_versions(迁移 001–006,详见 docs/data-model.md);project_versions 存版本快照(version_number/source/label/app_html),messages.metadata(JSONB)存演示标识与计划卡,projects.is_demo 标记演示产物。
-- 用户数据表含 user_id 关联 `auth.users`,全表启用 RLS(本人可读写);community_apps/templates 为公共数据。
+- 表:profiles、spaces、projects、conversations、messages、community_apps、templates、project_versions(迁移 001–009,详见 docs/data-model.md);project_versions 存版本快照(version_number/source/label/app_html),messages.metadata(JSONB)存演示标识与计划卡,projects.is_demo 标记演示产物。
+- 用户数据表含 user_id 关联 `auth.users`,全表启用 RLS(本人可读写);community_apps/templates 为公共数据(线上实测只读 RLS)。
 - 注册触发器(迁移 004/005):自动创建 profile + 默认工作区;hashtext 取色已修复负数下标问题。
-- conversations.is_favorite + 部分索引按收藏优先排序(迁移 005);消息随会话级联删除。
+- conversations.is_favorite + 部分索引按收藏优先排序(迁移 005);消息随会话级联删除;conversations.status 支持归档过滤(迁移 007)。
+- 原子版本写入(迁移 009):RPC `app_write_project_version` 把「项目 app_html 更新 + 版本快照插入 + 取号」放进单个事务,并发由 `UNIQUE(project_id, version_number)` 兜底,失败方以最新版本号重试,不产生重复版本号或半写状态。
 
-## 三、当前功能完成度(T1–T29)
+## 三、当前功能完成度(T1–T31)
 
 | 模块 | 内容 | 状态 |
 |------|------|------|
@@ -91,6 +92,12 @@ SSE 事件协议:`message / plan / step-* / code-delta / app / done / error`;130
 | 浅色主题体系(T27) | 详情页左侧对话栏/状态卡/失败卡/空态/队列面板、源码查看器与 HTML 编辑器、`#` 引用与 `+` 号菜单统一白色浅色语义变量 | ✅ 完成(T27 专项走查 17/17,`getComputedStyle` 亮度实测;深色用户气泡与主题预览装饰条按设计保留) |
 | Agent 死循环修复(T28) | 终止守卫(app 交付后缺 done/截断补发收敛不重跑)、重试边界(未交付瞬时故障封顶 4 次)、确定性 error 不自动继续、同轮次幂等落库 | ✅ 完成(t28-loop-repro.mjs Mock SSE 11/11,修复前 4 次上游调用+4 次 plan→修复后各 1 次;真实 AI 恢复后 t9 14/14、test_agent_e2e.py 通过) |
 | 真实 AI 全链路终验与产物语法自检(T29) | Edge Function 交付前对内联 `<script>` 做 `new Function` 纯语法校验,检出错误(如非法 `const` 声明)发起一次内容保全式 AI 修复重试并记录 `syntaxFixed`;刷新回放改等待式断言消除竞态 | ✅ 完成(t29-real-chain-walkthrough.mjs 真实链路 32/32,总耗时 49.5s:停止轮上游调用 1 次、两轮真实增量 T29R1MARK/T29R2MARK 特征保持、版本链 v1→v4、Preview/源码/导出一致、刷新回放消息/计划卡/真实生成徽标/4 版本/关联项目齐全、产物 iframe 无语法错误;t25 复跑 26/26) |
+| 原子版本写入事务(T31) | 迁移 009 RPC `app_write_project_version`:「项目 app_html 更新 + 版本快照插入 + 取号」单事务;并发由 `UNIQUE(project_id, version_number)` 兜底,失败方以最新版本号重试,无重复版本号/半写状态;中断注入后项目与快照保持一致 | ✅ 完成(t31-transaction-injection.mjs 20/20:并发唯一、无半写、RLS 隔离、中断一致性) |
+| 真实模型复测矩阵(T31) | 计算器/贪吃蛇/待办清单三类应用连续首轮生成 + 增量修改,校验 SSE 事件完整性、版本链连续性与产物内容 | ✅ 完成(t31-real-model-matrix.mjs 44/44 PASS) |
+| Preview 沙箱安全(T31) | iframe sandbox 白名单 + srcdoc、opaque origin、CSP、宿主 DOM/存储/Cookie 隔离、弹窗与顶层导航守卫、表单外发拦截、宿主完整性 | ✅ 完成(t31-sandbox-security.mjs 24/24 PASS) |
+| 认证与状态恢复终验(T31) | A1–A21:登录入口/注册建默认工作区/会话持久化/刷新保持登录态与会话项目/退出清令牌/重登恢复/清空存储回落/refresh token 换新 access token 访问受保护资源/无痕上下文完整恢复 | ✅ 完成(t31-auth-walkthrough.mjs 21/21 PASS) |
+| 评审账号与隔离验收(T31) | 评审账号创建(邮箱已确认)、可登录、注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人数据返回空集、公共表只读、无写策略写入被拒、可创建项目并经原子 RPC 写版本快照 | ✅ 完成(t31_reviewer_account.py 10/10 PASS,凭据 24 小时有效且不入库) |
+| 部署溯源(T31) | Vite 构建期注入 Git SHA / ref / 构建时间到 `window.__ATOMS_BUILD__`,线上可直接核对部署产物对应提交 | ✅ 完成(SHA `6523600eebfeff125fcc4a44494d4ae2353ae0df` / ref `main`) |
 | 语音转写(T5) | scribe_v2 录音转写、原生识别回退 | ✅ 完成(E2E 通过) |
 | 模板占位(T5) | 占位填写弹窗、内容替换、落库回放 | ✅ 完成 |
 | 资源/项目页(T3) | 发现/模板过滤、体验/克隆/魔改、收藏 | ✅ 完成 |
@@ -114,4 +121,4 @@ SSE 事件协议:`message / plan / step-* / code-delta / app / done / error`;130
 | P3 | 工程化多文件生成 + 分享落地页 | 支撑真实项目形态与传播;依赖 P2 的项目工作区模型 |
 | P4 | 测试 CI 化 + 部署体验 | 回归脚本容器化/定时执行,一键发布与预览环境 |
 
-**总体判断**:产品主链路(输入 → 生成 → 预览 → 落库 → 回放 → 管理)已真实闭环,T23 后故障路径(模型降级/自动重试/显式演示兜底)已闭环,T25 补齐增量修改与版本管理(快照/切换/回滚/在线编辑/导出,走查 26/26),T28 修复生成完成后的重新规划死循环(终止守卫 + 有限重试 + 幂等落库,Mock SSE 专项 11/11),T29 完成真实 AI 全链路终验(32/32,总耗时 49.5s)并补齐产物 JavaScript 语法自检与内容保全式自动修复,消除预览 iframe 的运行时语法报错。此前唯一外部阻塞(平台 AI 账户余额不足 HTTP 402)已于 2026-09-20 解除,真实 AI 全链路(`test_agent_e2e.py`、t9 14/14、t29 32/32)复测通过,全量回归就绪。后续投入优先级:BYOK 供应商设置(P1)→ 详情页工作区化(P2)→ 工程化多文件(P3)。
+**总体判断**:产品主链路(输入 → 生成 → 预览 → 落库 → 回放 → 管理)已真实闭环,T23 后故障路径(模型降级/自动重试/显式演示兜底)已闭环,T25 补齐增量修改与版本管理(快照/切换/回滚/在线编辑/导出,走查 26/26),T28 修复生成完成后的重新规划死循环(终止守卫 + 有限重试 + 幂等落库,Mock SSE 专项 11/11),T29 完成真实 AI 全链路终验(32/32,总耗时 49.5s)并补齐产物 JavaScript 语法自检与内容保全式自动修复,消除预览 iframe 的运行时语法报错。T31 完成交付级验收:版本写入原子化(迁移 009 事务 RPC,20/20)、真实模型连续生成矩阵(44/44)、Preview 沙箱安全(24/24)、认证与状态恢复 A1–A21(21/21)、评审账号与 RLS 隔离(10/10)、构建溯源可核对,并同步文档证据。此前唯一外部阻塞(平台 AI 账户余额不足 HTTP 402)已于 2026-09-20 解除,真实 AI 全链路(`test_agent_e2e.py`、t9 14/14、t29 32/32、t31 44/44)复测通过,全量回归就绪。后续投入优先级:BYOK 供应商设置(P1)→ 详情页工作区化(P2)→ 工程化多文件(P3)。

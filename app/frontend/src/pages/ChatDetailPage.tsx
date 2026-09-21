@@ -47,8 +47,11 @@ import ChatComposer, {
 } from '@/components/chat/ChatComposer';
 import { runAgent, type AgentPlanStep } from '@/lib/agent';
 import { DEMO_KIND_META, type DemoApp } from '@/lib/demo-apps';
+// T31:预览沙箱——产物 HTML 经隔离包装后进入 iframe(无 allow-same-origin + CSP + 守卫 shim)
+import { buildSandboxedPreview, PREVIEW_SANDBOX_ATTRIBUTES } from '@/lib/preview-sandbox';
 import {
   createProject,
+  deleteProject,
   fetchConversation,
   fetchConversationMessages,
   fetchConversationProject,
@@ -56,9 +59,8 @@ import {
   fetchProjects,
   fetchRecentConversations,
   insertMessage,
-  insertProjectVersion,
   PROJECT_VERSION_SOURCE_LABEL,
-  updateProjectAppHtml,
+  writeProjectVersion,
   type Conversation,
   type Project,
   type ProjectVersion,
@@ -384,8 +386,8 @@ function AppViewer({
         <iframe
           key={frameKey}
           title={`${app.title} 预览`}
-          srcDoc={displayHtml}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
+          srcDoc={buildSandboxedPreview(displayHtml)}
+          sandbox={PREVIEW_SANDBOX_ATTRIBUTES}
           className="h-full w-full flex-1 bg-white"
         />
       ) : (
@@ -396,7 +398,7 @@ function AppViewer({
       <div className="flex h-8 shrink-0 items-center gap-2 border-t bg-background px-3 text-[11px] text-muted-foreground">
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{file.name}</span>
         <span>
-          {viewed ? `历史快照 v${viewed.version_number}` : '最新版本 · 单文件应用 · 可直接运行'}
+          {viewed ? `历史快照 v${viewed.version_number}` : '最新版本 · 单文件应用 · 沙箱隔离运行'}
         </span>
         <button
           type="button"
@@ -604,23 +606,25 @@ export default function ChatDetailPage() {
   }, [messages]);
 
   /** 生成完成后把应用落成项目(与首页行为一致,进入「我的项目」) */
-  /** T25:写入版本快照(版本号=最新+1,写入后刷新本地版本列表);失败真实透出,不静默吞错 */
+  /**
+   * T31 版本写入(原子):经数据库 RPC 在同一事务内更新项目产物并写入版本快照,
+   * 版本号由服务端在项目行锁内分配。任一步失败整体回滚,调用方据返回值判断是否更新本地状态。
+   */
   const recordVersion = async (
     projectId: string,
     source: ProjectVersionSource,
     label: string,
     appHtml: string,
+    isDemo?: boolean,
   ): Promise<number | null> => {
     try {
-      const existing = await fetchProjectVersions(projectId);
-      const nextNumber = (existing[0]?.version_number ?? 0) + 1;
-      await insertProjectVersion({
+      const nextNumber = await writeProjectVersion({
         projectId,
         userId: uid,
-        versionNumber: nextNumber,
         source,
         label,
         appHtml,
+        isDemo,
       });
       setVersions(await fetchProjectVersions(projectId));
       return nextNumber;
@@ -644,15 +648,17 @@ export default function ChatDetailPage() {
     const meta = DEMO_KIND_META[created.kind];
     try {
       if (opts?.incremental && project) {
-        await updateProjectAppHtml(project.id, html, created.isDemo);
-        setProject((prev) => (prev ? { ...prev, app_html: html } : prev));
+        // T31 原子性:内容与版本快照同事务落库;失败(事务已回滚)时不改本地状态,避免展示与库内不一致
         const nextNumber = await recordVersion(
           project.id,
           'generation',
           `增量修改:${(opts.changeSummary ?? '').slice(0, 40)}`,
           html,
+          created.isDemo,
         );
-        toast.success(nextNumber ? `应用已更新,已记录版本 v${nextNumber}` : '应用已更新');
+        if (nextNumber === null) return;
+        setProject((prev) => (prev ? { ...prev, app_html: html } : prev));
+        toast.success(`应用已更新,已记录版本 v${nextNumber}`);
       } else {
         const createdProject = await createProject({
           userId: uid,
@@ -670,7 +676,23 @@ export default function ChatDetailPage() {
         });
         if (createdProject) {
           setProject(createdProject);
-          await recordVersion(createdProject.id, 'generation', '首次生成', html);
+          // T31 首次生成的补偿回滚:项目内容已落库但版本快照写入失败时,删除刚创建的项目,
+          // 避免留下「项目有内容却无版本链」的半写状态(增量/编辑/回滚由 RPC 事务保证,无需补偿)
+          const firstVersion = await recordVersion(
+            createdProject.id,
+            'generation',
+            '首次生成',
+            html,
+            created.isDemo,
+          );
+          if (firstVersion === null) {
+            await deleteProject(uid, createdProject.id).catch((error) => {
+              console.error('[chat] 首次生成补偿删除失败:', error);
+            });
+            setProject(null);
+            toast.error('项目与版本记录未能一致写入,已回滚本次项目创建,请重试');
+            return;
+          }
           toast.success(`项目「${created.title}」已保存到我的项目`);
           window.dispatchEvent(new Event('atoms:projects-updated'));
         }
@@ -911,28 +933,26 @@ export default function ChatDetailPage() {
     setEditing(false);
   };
 
-  /** T25:一键回滚——以目标版本内容更新项目并新建 rollback 版本,绝不覆盖旧快照 */
+  /** T25:一键回滚——以目标版本内容更新项目并新建 rollback 版本,绝不覆盖旧快照(T31:原子写入) */
   const handleRollback = async (version: ProjectVersion) => {
     if (rollingBack || !project) return;
     setRollingBack(true);
     try {
-      await updateProjectAppHtml(project.id, version.app_html, app?.isDemo);
-      setProject((prev) => (prev ? { ...prev, app_html: version.app_html } : prev));
+      // T31:内容与版本快照同事务;失败(事务已回滚)时项目内容未变更,本地状态保持原样
       const nextNumber = await recordVersion(
         project.id,
         'rollback',
         `回滚至 v${version.version_number}`,
         version.app_html,
+        app?.isDemo,
       );
+      if (nextNumber === null) return;
+      setProject((prev) => (prev ? { ...prev, app_html: version.app_html } : prev));
       setApp((prev) =>
         prev ? { ...prev, files: [{ ...prev.files[0], content: version.app_html }] } : prev,
       );
       setViewingVersionId(null);
-      toast.success(
-        nextNumber
-          ? `已回滚到 v${version.version_number},当前为 v${nextNumber}`
-          : '已回滚到目标版本',
-      );
+      toast.success(`已回滚到 v${version.version_number},当前为 v${nextNumber}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '回滚失败,请重试');
     } finally {
@@ -963,16 +983,17 @@ export default function ChatDetailPage() {
     }
     setSavingEdit(true);
     try {
-      await updateProjectAppHtml(project.id, html, app?.isDemo);
+      // T31:内容与版本快照同事务写入,失败时项目内容保持原样(不留半写)
+      const nextNumber = await recordVersion(project.id, 'edit', '在线编辑', html, app?.isDemo);
+      if (nextNumber === null) return;
       setProject((prev) => (prev ? { ...prev, app_html: html } : prev));
-      const nextNumber = await recordVersion(project.id, 'edit', '在线编辑', html);
       setApp((prev) =>
         prev ? { ...prev, files: [{ ...prev.files[0], content: html }] } : prev,
       );
       setEditing(false);
       setViewingVersionId(null);
       setCenterTab('overview');
-      toast.success(nextNumber ? `编辑已保存,已记录版本 v${nextNumber}` : '编辑已保存');
+      toast.success(`编辑已保存,已记录版本 v${nextNumber}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '保存失败,请重试');
     } finally {

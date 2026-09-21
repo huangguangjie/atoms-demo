@@ -161,7 +161,8 @@
 
 - 统一门面:`src/lib/supabase.ts`。`isSupabaseConfigured`(依据 `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`)决定远程或演示分支;两分支返回同构实体,页面无感。
 - 写操作与主要查询显式检查 Supabase 错误并抛出(T6),由调用侧 toast 透出真实原因;活跃会话查询统一 `status=eq.active`(T26)。
-- 版本 API:`fetchProjectVersions`(AbortController 真取消 + 4s 超时 + 最多 3 次重试 + 加载态)、`insertProjectVersion`、`updateProjectAppHtml`。
+- 版本 API:`fetchProjectVersions`(AbortController 真取消 + 4s 超时 + 最多 3 次重试 + 加载态)、`insertProjectVersion`、`updateProjectAppHtml`、`writeProjectVersion`(经原子 RPC,见下)。
+- 原子写入(T31):RPC `app_write_project_version(p_project_id, p_app_html, p_source, p_label)`(迁移 009,`security definer`)在**单个事务**内完成「取号 → 更新 `projects.app_html` → 插入 `project_versions` 快照」;并发由 `UNIQUE(project_id, version_number)` 兜底,冲突方以最新版本号重试,不产生重复版本号或半写状态;函数内校验 `auth.uid() = user_id`(RLS 语义),他人项目不可写。
 - 演示模式:内存数据兜底,仅用于未配置环境变量的本地预览,刷新即失。
 - 跨组件刷新:广播 `atoms:projects-updated` / `atoms:conversations-updated`,项目页与侧边栏监听刷新。
 
@@ -176,5 +177,6 @@
 ## 6. 验证
 
 - `app/backend/scripts/e2e_verify.py`:注册/登录、默认空间、项目落库、模板/社区读取、收藏、跨用户隔离与越权更新拦截。
+- `app/backend/scripts/t31_reviewer_account.py`:评审账号创建与隔离验收 10/10(注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人数据返回空集、公共表只读、无写策略写入被拒、可创建项目并经原子 RPC 写 v1 快照);结果落盘 `app/backend/reports/t31-reviewer-account.json`,回收脚本 `app/backend/reports/t31-reviewer-revoke.sql`。
 - `app/backend/scripts/t26_probe.sql` + `t26_archive_conversations.sql`:T26 归档侦查与一次性归档(结果 5 active + 1 archived,消息完整保留,其他账号零影响)。
-- 浏览器回归:`t7-workspace-regression.mjs`(15/15)、`t10-sidebar-actions-regression.mjs`(20/20,服务端核验 is_favorite/重命名/消息级联删除)、`t26-archive-walkthrough.mjs`(14/14,REST 核验归档不删数据)、`t25-versioning-walkthrough.mjs`(26/26,REST 核验 project_versions 快照)、`t29-real-chain-walkthrough.mjs`(32/32,真实链路 v1→v4 版本链与刷新恢复)。
+- 浏览器回归:`t7-workspace-regression.mjs`(15/15)、`t10-sidebar-actions-regression.mjs`(20/20,服务端核验 is_favorite/重命名/消息级联删除)、`t26-archive-walkthrough.mjs`(14/14,REST 核验归档不删数据)、`t25-versioning-walkthrough.mjs`(26/26,REST 核验 project_versions 快照)、`t29-real-chain-walkthrough.mjs`(32/32,真实链路 v1→v4 版本链与刷新恢复)、`t31-transaction-injection.mjs`(20/20,原子 RPC 并发唯一/无半写/RLS 隔离/中断一致性)、`t31-auth-walkthrough.mjs`(21/21,认证与状态恢复 A1–A21)。

@@ -1,0 +1,208 @@
+{
+  "steps": [
+    {
+      "name": "注册沙箱验证账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "登录注入并进入首页",
+      "ok": true,
+      "detail": "t31-sandbox-1789994409910 的 Atoms"
+    },
+    {
+      "name": "iframe sandbox 未授予 allow-same-origin(隔离宿主)",
+      "ok": true,
+      "detail": "sandbox=\"allow-scripts allow-forms allow-modals\""
+    },
+    {
+      "name": "iframe sandbox 未授予 allow-popups / allow-top-navigation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "预览文档经沙箱包装(含隔离标记与 CSP meta)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "隔离层位于产物脚本之前(守卫先于应用代码执行)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "产物内部探针已回传(恶意脚本确实在沙箱内执行)",
+      "ok": true,
+      "detail": "探针项 17"
+    },
+    {
+      "name": "S1 无法读取宿主 DOM(parent.document 跨源拒绝)",
+      "ok": true,
+      "detail": "{\"ok\":false,\"error\":\"SecurityError\"}"
+    },
+    {
+      "name": "S1 无法改写宿主 DOM(hostRemoval/hostDomWrite 均失败)",
+      "ok": true,
+      "detail": "write={\"ok\":false,\"error\":\"SecurityError\"} removal={\"ok\":false,\"error\":\"SecurityError\"}"
+    },
+    {
+      "name": "S2 拿不到宿主 localStorage(parent 访问跨源拒绝)",
+      "ok": true,
+      "detail": "{\"ok\":false,\"error\":\"SecurityError\"}"
+    },
+    {
+      "name": "S2 沙箱内存储走内存兜底(写入后回读一致,不落宿主)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"value\":\"1\"}"
+    },
+    {
+      "name": "S3 Cookie 被守卫清空(读回空串)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"value\":\"\"}"
+    },
+    {
+      "name": "S4 window.open 被守卫拦截(返回 null)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"value\":\"null\"}"
+    },
+    {
+      "name": "S5 外部脚本未执行(CSP script-src 拦截)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"value\":\"true\"}"
+    },
+    {
+      "name": "S6 数据外发通道被 CSP connect-src 阻断(fetch/xhr/beacon/ws 零请求到达)",
+      "ok": true,
+      "detail": "恶意域名零请求"
+    },
+    {
+      "name": "S7 表单外发被 CSP form-action 阻断(无 document 级外发请求)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S8 顶层导航与宿主地址不可读(跨源拒绝)",
+      "ok": true,
+      "detail": "top={\"ok\":false,\"error\":\"SecurityError\"} parentOrigin={\"ok\":false,\"error\":\"SecurityError\"}"
+    },
+    {
+      "name": "沙箱内为 opaque origin(产物自身 origin 为 null)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"value\":\"null\"}"
+    },
+    {
+      "name": "残余通道如实留痕(仅 <img> 像素通道,已限宿主数据不可达)",
+      "ok": true,
+      "detail": "图片请求 1 次(connect-src/form-action 通道为 0)"
+    },
+    {
+      "name": "宿主页面未被破坏(标题/根节点/应用内容完好)",
+      "ok": true,
+      "detail": "{\"title\":\"对话式应用构建台\",\"hasRoot\":true,\"bodyText\":true,\"storageKeys\":1}"
+    },
+    {
+      "name": "宿主 localStorage 未被恶意产物污染(无 probe 键)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新前本轮消息已落库(用户+助手写入成功且无在途请求)",
+      "ok": true,
+      "detail": "写入状态 [201,201]"
+    },
+    {
+      "name": "刷新后仍停留应用内(未被劫持跳转)",
+      "ok": true,
+      "detail": "http://localhost:3000/chat/9da0a7be-7058-4daa-b46d-4a7e44ddb1f3"
+    },
+    {
+      "name": "无未预期控制台错误",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "probes": {
+    "parentDocument": {
+      "ok": false,
+      "error": "SecurityError"
+    },
+    "hostDomWrite": {
+      "ok": false,
+      "error": "SecurityError"
+    },
+    "hostStorage": {
+      "ok": false,
+      "error": "SecurityError"
+    },
+    "sessionStorage": {
+      "ok": true,
+      "value": "1"
+    },
+    "cookie": {
+      "ok": true,
+      "value": ""
+    },
+    "windowOpen": {
+      "ok": true,
+      "value": "null"
+    },
+    "topNavigation": {
+      "ok": false,
+      "error": "SecurityError"
+    },
+    "hostOrigin": {
+      "ok": true,
+      "value": "null"
+    },
+    "parentOrigin": {
+      "ok": false,
+      "error": "SecurityError"
+    },
+    "externalScriptBlocked": {
+      "ok": true,
+      "value": "true"
+    },
+    "fetchExfil": {
+      "ok": true,
+      "value": "fired"
+    },
+    "xhrExfil": {
+      "ok": true,
+      "value": "fired"
+    },
+    "beaconExfil": {
+      "ok": true,
+      "value": "true"
+    },
+    "wsExfil": {
+      "ok": true,
+      "value": "fired"
+    },
+    "imageExfil": {
+      "ok": true,
+      "value": "fired"
+    },
+    "formExfil": {
+      "ok": true,
+      "value": "submitted"
+    },
+    "hostRemoval": {
+      "ok": false,
+      "error": "SecurityError"
+    }
+  },
+  "consoleErrors": [],
+  "residualChannels": {
+    "imageBeacons": 1,
+    "sample": [
+      {
+        "type": "image",
+        "url": "https://evil.example.com/pixel?c=1"
+      }
+    ]
+  },
+  "messageWrites": [
+    201,
+    201
+  ]
+}

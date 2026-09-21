@@ -615,6 +615,28 @@ export async function fetchProjects(userId: string, favoriteOnly: boolean): Prom
   return (data as Project[]) ?? [];
 }
 
+/**
+ * T31:删除项目(仅属主可删,RLS 兜底)。
+ * 用于首次生成的补偿回滚:项目内容已落库但版本快照写入失败时,删除刚创建的项目,
+ * 避免留下「项目有内容却无版本链」的半写状态。
+ * project_versions.project_id 为 ON DELETE CASCADE,删除项目会一并清理其版本快照。
+ */
+export async function deleteProject(userId: string, projectId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    demoProjects = demoProjects.filter((p) => !(p.id === projectId && p.user_id === userId));
+    demoVersions.delete(projectId);
+    return;
+  }
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', projectId)
+    .eq('user_id', userId);
+  if (error) {
+    throw new Error(`删除项目失败:${error.message}`);
+  }
+}
+
 export async function toggleProjectFavorite(project: Project): Promise<void> {
   if (!isSupabaseConfigured) {
     demoProjects = demoProjects.map((p) =>
@@ -703,7 +725,64 @@ export async function fetchProjectVersions(projectId: string): Promise<ProjectVe
   throw new Error(`读取版本历史失败:${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
-/** 写入一条版本快照(版本号由调用方按最新版本 + 1 递增,数据库唯一约束兜底) */
+/**
+ * T31 原子写入:同一事务内完成「更新项目产物 + 写入版本快照」(数据库 RPC app_write_project_version)。
+ *
+ * 取代此前「updateProjectAppHtml + insertProjectVersion」两次独立请求的做法:
+ * 两次请求任一步失败都会留下半写状态(项目内容已变但版本快照缺失,或反之),
+ * 且客户端自行算号(最新+1)在重试/并发下会撞 UNIQUE(project_id, version_number)。
+ * 现在版本号由服务端在项目行锁内权威分配,失败整体回滚,内容与快照始终一致。
+ */
+export async function writeProjectVersion(input: {
+  projectId: string;
+  userId: string;
+  source: ProjectVersionSource;
+  label: string;
+  appHtml: string;
+  /** 演示产物标记(不传则不改动项目 is_demo) */
+  isDemo?: boolean;
+}): Promise<number> {
+  if (!isSupabaseConfigured) {
+    const list = demoVersions.get(input.projectId) ?? [];
+    const nextNumber = list.reduce((max, v) => Math.max(max, v.version_number), 0) + 1;
+    demoVersions.set(input.projectId, [
+      ...list,
+      {
+        id: demoId('ver'),
+        project_id: input.projectId,
+        version_number: nextNumber,
+        source: input.source,
+        label: input.label,
+        app_html: input.appHtml,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    demoProjects = demoProjects.map((p) =>
+      p.id === input.projectId
+        ? ({
+            ...p,
+            app_html: input.appHtml,
+            ...(input.isDemo === undefined ? {} : { is_demo: input.isDemo }),
+          } as Project)
+        : p,
+    );
+    return nextNumber;
+  }
+
+  const { data, error } = await supabase.rpc('app_write_project_version', {
+    p_project_id: input.projectId,
+    p_source: input.source,
+    p_label: input.label,
+    p_app_html: input.appHtml,
+    p_is_demo: input.isDemo ?? null,
+  });
+  if (error) {
+    throw new Error(`版本写入失败(事务已回滚,项目内容保持原样):${error.message}`);
+  }
+  return Number(data);
+}
+
+/** 写入一条版本快照(低层接口:仅插入版本记录,不更新项目内容;业务链路请用 writeProjectVersion) */
 export async function insertProjectVersion(input: {
   projectId: string;
   userId: string;
@@ -741,7 +820,7 @@ export async function insertProjectVersion(input: {
   }
 }
 
-/** 更新项目当前产物(增量修改/回滚/在线编辑后同步 projects.app_html) */
+/** 更新项目当前产物(低层接口;业务链路请用 writeProjectVersion 以保证与版本快照同事务) */
 export async function updateProjectAppHtml(
   projectId: string,
   appHtml: string,

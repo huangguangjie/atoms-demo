@@ -1,0 +1,112 @@
+{
+  "steps": [
+    {
+      "name": "A1 未登录访问时提供登录入口(头像 → 登录 Atoms 弹窗)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A2 注册成功并进入登录态(默认工作区自动创建)",
+      "ok": true,
+      "detail": "t31-auth-1789995160858 的 Atoms"
+    },
+    {
+      "name": "A3 会话已持久化到浏览器存储(access/refresh 齐全)",
+      "ok": true,
+      "detail": "user=7c36e5fb-f083-4ed3-a917-bdc5984b9527"
+    },
+    {
+      "name": "A4 云端默认工作区与界面一致",
+      "ok": true,
+      "detail": "spaces=1"
+    },
+    {
+      "name": "A5 云端数据准备完成(会话 + 项目)",
+      "ok": true,
+      "detail": "conv=201 proj=201"
+    },
+    {
+      "name": "A6 刷新后登录态保持(无需重新登录)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A7 刷新后会话列表恢复",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A8 刷新后项目数据恢复(我的项目页)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A9 退出登录后回到未登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A10 退出登录后云端数据不再展示(工作区名消失)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A11 退出登录清理本地会话令牌",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A12 重新登录成功",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A13 重新登录后会话恢复",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A14 清空存储后回到未登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A15 清空存储后重新登录数据完整恢复(工作区 + 会话)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A16 刷新令牌可换取新访问令牌(HTTP 200)",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "A17 新访问令牌可访问受保护资源(用户信息)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A18 无痕上下文初始为未登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A19 无痕上下文登录后工作区恢复",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A20 无痕上下文登录后会话与项目恢复",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A21 无未预期控制台错误",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": [],
+  "passed": 21,
+  "total": 21
+}

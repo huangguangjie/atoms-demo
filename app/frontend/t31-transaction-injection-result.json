@@ -1,0 +1,130 @@
+{
+  "steps": [
+    {
+      "name": "账号 A 注册",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "账号 B 注册",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "账号 A/B 登录获取 JWT",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "夹具项目创建",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "基线状态:无版本且项目为 BASE 内容",
+      "ok": true,
+      "detail": "版本数 0"
+    },
+    {
+      "name": "I1 合法写入成功且版本号为 1",
+      "ok": true,
+      "detail": "HTTP 200 返回 1"
+    },
+    {
+      "name": "I1 项目内容与 v1 快照同时生效(原子)",
+      "ok": true,
+      "detail": "一致=true 版本链 1"
+    },
+    {
+      "name": "I2 显式重复版本号被唯一约束拒绝(23505)",
+      "ok": true,
+      "detail": "HTTP 409 code=23505"
+    },
+    {
+      "name": "I2 冲突请求整体回滚:项目内容未被改写、版本链未增长",
+      "ok": true,
+      "detail": "一致=true 版本链 1"
+    },
+    {
+      "name": "I3 非法版本来源被拒绝(22023)",
+      "ok": true,
+      "detail": "HTTP 400 code=22023"
+    },
+    {
+      "name": "I3 拒绝后无副作用",
+      "ok": true,
+      "detail": "一致=true"
+    },
+    {
+      "name": "I4 不存在的项目被拒绝(P0002)",
+      "ok": true,
+      "detail": "HTTP 500 code=P0002"
+    },
+    {
+      "name": "I5 越权写入被拒绝(RLS 隔离,不泄露项目存在性)",
+      "ok": true,
+      "detail": "HTTP 500 code=P0002"
+    },
+    {
+      "name": "I5 属主数据未被越权改动",
+      "ok": true,
+      "detail": "一致=true"
+    },
+    {
+      "name": "I6 未登录调用被拒绝(anon 无 EXECUTE 权限)",
+      "ok": true,
+      "detail": "HTTP 401 code=42501"
+    },
+    {
+      "name": "I7 并发写入完成(全部成功)",
+      "ok": true,
+      "detail": "成功 6/6"
+    },
+    {
+      "name": "I7 版本号权威分配无重复",
+      "ok": true,
+      "detail": "版本链 1,2,3,4,5,6,7"
+    },
+    {
+      "name": "I7 并发后项目内容 == 最大版本快照(无半写)",
+      "ok": true,
+      "detail": "项目内容 T31-TX-CONC-5 | 最新快照 v7 T31-TX-CONC-5"
+    },
+    {
+      "name": "I8 客户端中断请求(已触发 abort)",
+      "ok": true,
+      "detail": "HTTP 0 code=ABORTED"
+    },
+    {
+      "name": "I8 中断后库内自洽:未提交或完整提交,无半写状态",
+      "ok": true,
+      "detail": "一致=true 结果=中断前已完整提交 | 版本链 1,2,3,4,5,6,7,8"
+    }
+  ],
+  "evidence": {
+    "concurrent": {
+      "okCount": 6,
+      "numbers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "consistent": true
+    },
+    "projectId": "9758bcc9-86c0-426e-864a-03cff474c01b",
+    "finalChain": [
+      "v1:generation:首次生成",
+      "v2:generation:并发写入 1",
+      "v3:generation:并发写入 2",
+      "v4:generation:并发写入 3",
+      "v5:generation:并发写入 6",
+      "v6:generation:并发写入 4",
+      "v7:generation:并发写入 5",
+      "v8:edit:中断写入"
+    ]
+  }
+}

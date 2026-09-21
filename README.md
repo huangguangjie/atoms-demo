@@ -2,7 +2,7 @@
 
 一个还原 [Atoms](https://atoms.dev) 产品形态的智能体应用平台:用户在首页输入应用创意,智能体产出分步计划、流式生成代码,并在应用查看器中实时预览可运行的单文件 HTML 应用。全栈使用 Supabase(项目 pofchtyjqwevchiiqags):Auth 认证、Postgres/RLS 数据持久化、Edge Functions 承载 AI 生成与语音转写;未配置 Supabase 环境变量时自动降级为演示模式(浏览器内存数据)。
 
-## 功能全景(T1–T29)
+## 功能全景(T1–T31)
 
 ### 全局框架
 - 左右分栏布局:左侧边栏可折叠、可拖拽调宽(react-resizable-panels)
@@ -49,6 +49,24 @@
 - 我的项目:全部/已收藏切换、收藏/取消收藏、项目卡片打开回放
 - 会话操作:收藏(星标排序)、行内重命名、删除二次确认、消息级联删除
 - 会话归档(T26):`conversations.status`(`active`/`archived`)仅隐藏不删除数据;最近会话列表与单会话读取按 `status='active'` 过滤,收藏会话豁免「最近 5 条」限制;归档会话的旧链接直达时提示「该会话已归档」并回落首页,不误伤活跃会话
+
+## T31 验收、加固与部署溯源
+
+### 原子版本写入(事务)
+- 迁移 `009_atomic_version_write.sql` 新增 RPC `app_write_project_version`,把「项目 `app_html` 更新 + 版本快照插入 + 版本号取号」收敛为**单个数据库事务**。
+- 并发取号由表级 `UNIQUE(project_id, version_number)` 兜底:并发写入只有一个事务成功,失败方以最新版本号重试,不产生重复版本号与半写状态(项目已更新但快照缺失)。
+- 中断注入(客户端主动断开、事务内语句报错)后项目与版本快照保持前后一致,不遗留孤儿快照;`source` 仍受 `generation|edit|rollback` CHECK 约束。
+
+### 认证、状态恢复与安全
+- 认证全流程走查 `t31-auth-walkthrough.mjs` 覆盖 A1–A21:未登录登录入口 → 注册并自动创建默认工作区 → 会话持久化到浏览器存储 → 刷新保持登录态/会话/项目 → 退出登录并清理令牌 → 重新登录数据恢复 → 清空存储回到未登录 → refresh token 换新 access token 并访问受保护资源 → 无痕上下文登录后工作区/会话/项目完整恢复。
+- 认证复测账号(评审账号)由 `t31_reviewer_account.py` 创建,验证注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人数据返回空集、公共表只读、无写策略写入被拒、可创建项目并经原子 RPC 写版本快照。
+
+### Preview 沙箱安全
+- `lib/preview-sandbox.ts` 统一包裹 Preview HTML:iframe 使用 `sandbox` 白名单 + `srcdoc`,运行在 opaque origin,AI 产物无法触达宿主 DOM、`localStorage`/`sessionStorage`/Cookie 与宿主会话令牌。
+- CSP 限制脚本/网络/表单外发;`window.open` 与顶层导航被守卫拦截,表单提交默认阻止;宿主页面完整性(令牌、DOM 结构)在沙箱产物运行前后一致。
+
+### 部署溯源
+- Vite 构建期注入 Git SHA / ref / 构建时间到 `window.__ATOMS_BUILD__`(由 `main.tsx` 挂载),线上可直接核对当前部署产物对应的提交。
 
 ## 目录结构
 
@@ -114,6 +132,10 @@ VITE_SUPABASE_ANON_KEY=<你的 Supabase anon key>
 | `t27-light-theme-walkthrough.mjs` | 详情页左侧及相关状态浅色体系(实测背景与文字亮度,含源码/编辑器/两类菜单/刷新回放) | 17/17 PASS |
 | `t28-loop-repro.mjs` | Agent 死循环专项(Mock SSE 驱动真实 agent.ts):产物交付后截断/缺 done 不重跑、确定性错误不重试、未交付重试封顶 4 次 | 11/11 PASS |
 | `t29-real-chain-walkthrough.mjs` | 真实 AI 全链路最终复测:停止生成上游调用≤1、两轮真实增量(T29R1MARK/T29R2MARK 特征保持)、版本链 v1→v4、Preview/源码/导出一致、刷新回放(消息/计划卡/真实生成徽标/4 版本/关联项目)、产物 iframe 无语法错误 | 32/32 PASS(总耗时 49.5s) |
+| `t31-transaction-injection.mjs` | 原子版本 RPC:并发取号唯一、无半写状态、RLS 隔离、中断注入后一致性 | 20/20 PASS |
+| `t31-real-model-matrix.mjs` | 真实模型连续生成矩阵:计算器/贪吃蛇/待办清单 首轮 + 增量、SSE 事件完整性、版本链与产物校验 | 44/44 PASS |
+| `t31-sandbox-security.mjs` | Preview 沙箱:iframe sandbox/opaque origin、CSP、DOM/存储/Cookie 隔离、弹窗与导航守卫、宿主完整性 | 24/24 PASS |
+| `t31-auth-walkthrough.mjs` | 认证与状态恢复 A1–A21:注册/默认工作区/刷新恢复/退出清理/重登/清空存储/令牌刷新/无痕上下文 | 21/21 PASS |
 
 后端验证脚本(`app/backend/scripts/`):`e2e_verify.py`(认证/资料/工作区/项目/RLS 隔离/越权拦截)、`test_agent_e2e.py`(登录态 AI SSE E2E)、`test_t9_baseline.py`(5 类生成质量门槛)、`test_transcribe.py`(语音转写)、`deploy_function.py`(Edge Function 部署)。
 
