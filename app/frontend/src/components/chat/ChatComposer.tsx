@@ -540,13 +540,13 @@ export default function ChatComposer({
           <div
             role="listbox"
             aria-label="引用菜单"
-            className="absolute bottom-[52px] left-4 z-50 w-72 overflow-hidden rounded-xl border border-white/10 bg-zinc-900 p-1.5 text-zinc-100 shadow-2xl shadow-black/40"
+            className="absolute bottom-[52px] left-4 z-50 w-72 overflow-hidden rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl"
           >
-            <div className="flex items-center gap-1 px-2 pb-1 pt-0.5 text-[10px] text-zinc-500">
+            <div className="flex items-center gap-1 px-2 pb-1 pt-0.5 text-[10px] text-muted-foreground">
               {refShowProjects && (
                 <button
                   type="button"
-                  className="rounded px-1 text-zinc-400 hover:text-zinc-200"
+                  className="rounded px-1 text-muted-foreground hover:text-foreground"
                   onClick={() => {
                     setRefShowProjects(false);
                     setRefHighlight(0);
@@ -559,7 +559,7 @@ export default function ChatComposer({
               {refQuery && <span className="ml-auto truncate">「{refQuery}」</span>}
             </div>
             {refRows.length === 0 && (
-              <p className="px-2.5 py-3 text-xs text-zinc-500">
+              <p className="px-2.5 py-3 text-xs text-muted-foreground">
                 {refShowProjects ? '暂无匹配项目,可先在「我的项目」页创建' : '没有匹配的引用项'}
               </p>
             )}
@@ -570,23 +570,23 @@ export default function ChatComposer({
                 role="option"
                 aria-selected={idx === refHighlight}
                 className={cn(
-                  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-zinc-200 hover:bg-white/5',
-                  idx === refHighlight && 'bg-white/10',
+                  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-foreground hover:bg-muted',
+                  idx === refHighlight && 'bg-muted',
                 )}
                 onMouseEnter={() => setRefHighlight(idx)}
                 onClick={() => selectRefRow(row)}
               >
                 {row.type === 'kind' ? (
                   <>
-                    <row.icon className="h-4 w-4 shrink-0 text-zinc-400" />
+                    <row.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="shrink-0">{row.label}</span>
-                    <span className="ml-auto truncate text-[11px] text-zinc-500">{row.desc}</span>
+                    <span className="ml-auto truncate text-[11px] text-muted-foreground">{row.desc}</span>
                   </>
                 ) : (
                   <>
-                    <FolderOpen className="h-4 w-4 shrink-0 text-zinc-400" />
+                    <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{row.name}</span>
-                    <span className="shrink-0 text-[11px] text-zinc-500">引用</span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">引用</span>
                   </>
                 )}
               </button>
@@ -621,73 +621,73 @@ export default function ChatComposer({
           <PopoverContent
             side="top"
             align="start"
-            className="w-[272px] rounded-2xl border-white/10 bg-zinc-900 p-1.5 text-zinc-100 shadow-2xl shadow-black/40"
+            className="w-[272px] rounded-2xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl"
           >
             <div className="flex flex-col">
               {/* 第一组:团队模式开关(div 代替 button,避免 Switch 嵌套 button 的 DOM 警告) */}
               <div
                 role="button"
                 tabIndex={0}
-                className="flex cursor-pointer select-none items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-white/30"
+                className="flex cursor-pointer select-none items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] outline-none hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => setTeamMode((v) => !v)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setTeamMode((v) => !v); }}
               >
-                <Users className="h-4 w-4 text-zinc-300" />
+                <Users className="h-4 w-4 text-muted-foreground" />
                 团队模式
                 <Switch
                   checked={teamMode}
                   onCheckedChange={setTeamMode}
                   onClick={(e) => e.stopPropagation()}
-                  className="ml-auto data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-zinc-600"
+                  className="ml-auto data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-input"
                 />
               </div>
 
-              <div className="my-1 h-px bg-white/10" />
+              <div className="my-1 h-px bg-border" />
 
               {/* 第二组:附件 / 连接器(附件保留原功能;引用已改为输入框内 # 触发,T17) */}
               <button
                 type="button"
-                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
+                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-muted"
                 onClick={() => {
                   fileInputRef.current?.click();
                   setPlusOpen(false);
                 }}
               >
-                <Paperclip className="h-4 w-4 text-zinc-300" />
+                <Paperclip className="h-4 w-4 text-muted-foreground" />
                 附件
-                <ChevronRight className="ml-auto h-3.5 w-3.5 text-zinc-500" />
+                <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
               </button>
               <button
                 type="button"
-                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
+                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-muted"
                 onClick={() => {
                   setPlusOpen(false);
                   setMcpOpen(true);
                 }}
               >
-                <Cable className="h-4 w-4 text-zinc-300" />
+                <Cable className="h-4 w-4 text-muted-foreground" />
                 连接器
                 {connectedCount > 0 ? (
-                  <span className="ml-auto rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
+                  <span className="ml-auto rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                     已连 {connectedCount}
                   </span>
                 ) : (
-                  <ChevronRight className="ml-auto h-3.5 w-3.5 text-zinc-500" />
+                  <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
                 )}
               </button>
 
-              <div className="my-1 h-px bg-white/10" />
+              <div className="my-1 h-px bg-border" />
 
               {/* 第三组:视频 / 深度研究 / 竞赛模式 */}
               <button
                 type="button"
-                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
+                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-muted"
                 onClick={() => setVideoDot(false)}
               >
-                <Video className="h-4 w-4 text-zinc-300" />
+                <Video className="h-4 w-4 text-muted-foreground" />
                 视频
                 <span className="ml-auto flex items-center gap-1.5">
-                  <span className="rounded-md bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
+                  <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
                     Seedance 2.5
                   </span>
                   {videoDot && <span className="h-2 w-2 rounded-full bg-red-500" />}
@@ -696,30 +696,30 @@ export default function ChatComposer({
               <div
                 role="button"
                 tabIndex={0}
-                className="flex cursor-pointer select-none items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-white/30"
+                className="flex cursor-pointer select-none items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] outline-none hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => setDeepResearch((v) => !v)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setDeepResearch((v) => !v); }}
               >
-                <Telescope className="h-4 w-4 text-zinc-300" />
+                <Telescope className="h-4 w-4 text-muted-foreground" />
                 深度研究
                 <Switch
                   checked={deepResearch}
                   onCheckedChange={setDeepResearch}
                   onClick={(e) => e.stopPropagation()}
-                  className="ml-auto data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-zinc-600"
+                  className="ml-auto data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-input"
                 />
               </div>
               <button
                 type="button"
-                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-white/5"
+                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-[13px] hover:bg-muted"
                 onClick={() => {
                   setPlusOpen(false);
                   toast.info('竞赛模式:同一需求由多个智能体并行竞标,生成后择优采用(即将上线)');
                 }}
               >
-                <FlaskConical className="h-4 w-4 text-zinc-300" />
+                <FlaskConical className="h-4 w-4 text-muted-foreground" />
                 竞赛模式
-                <ChevronRight className="ml-auto h-3.5 w-3.5 text-zinc-500" />
+                <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
               </button>
             </div>
           </PopoverContent>

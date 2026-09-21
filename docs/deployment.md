@@ -66,6 +66,7 @@ server {
 | t23-demo-mode-walkthrough.mjs | 14/14 | 演示模式全链路 |
 | t25-versioning-walkthrough.mjs | 26/26 | 增量修改、版本快照/切换/回滚/在线编辑/导出、刷新恢复 |
 | t26-archive-walkthrough.mjs | 14/14 | 会话归档过滤(收藏豁免、直达守卫、归档不删除数据) |
+| t27-light-theme-walkthrough.mjs | 17/17 | 详情页左侧及相关状态浅色体系(`getComputedStyle` 实测亮度:对话栏/状态徽标/失败卡/演示标识/源码查看器/HTML 编辑器/# 引用菜单/+ 号菜单/刷新回放) |
 | test_agent_e2e.py(真实 AI) | 阻塞 | Edge Function HTTP 402「AI 账户余额不足,请充值后重试」;充值后需复测,并同步重跑 t9 与 T13 落库/查看器断言 |
 
 ## 5. 发布后验证清单

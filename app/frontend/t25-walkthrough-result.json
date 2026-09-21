@@ -8,7 +8,7 @@
     {
       "name": "登录注入并进入首页",
       "ok": true,
-      "detail": "t25-1789923628161 的 Atoms"
+      "detail": "t25-1789954110181 的 Atoms"
     },
     {
       "name": "提交进入详情页",
@@ -128,15 +128,15 @@
     {
       "name": "刷新回放:版本列表恢复(4 个版本齐全)",
       "ok": true,
-      "detail": "历史版本 v4 修改 在线编辑 9/20/2026, 10:00:50 AM · 6.5 KB v3 回滚 回滚至 v1 9/20/2026, 10:00:49 AM · 6.5 KB v2 生成 增量修改:给番茄钟增加休息提醒音效开关按钮"
+      "detail": "历史版本 v4 修改 在线编辑 9/20/2026, 6:28:52 PM · 6.5 KB v3 回滚 回滚至 v1 9/20/2026, 6:28:51 PM · 6.5 KB v2 生成 增量修改:给番茄钟增加休息提醒音效开关按钮,放"
     }
   ],
   "consoleErrors": [
     "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
     "Failed to load resource: the server responded with a status of 402 ()",
-    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789923214785:152:15)\n    at async runAgent (http://localhost:",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts:152:15)\n    at async runAgent (http://localhost:3000/src/lib/age",
     "Failed to load resource: the server responded with a status of 402 ()",
-    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts?t=1789923214785:152:15)\n    at async runAgent (http://localhost:",
+    "[agent] Edge Function 调用失败: Error: Edge Function 响应异常:402(AI 账户余额不足,请充值后重试)\n    at runEdgeAgent (http://localhost:3000/src/lib/agent.ts:152:15)\n    at async runAgent (http://localhost:3000/src/lib/age",
     "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
   ]
 }

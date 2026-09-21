@@ -2,7 +2,7 @@
 
 一个还原 [Atoms](https://atoms.dev) 产品形态的智能体应用平台:用户在首页输入应用创意,智能体产出分步计划、流式生成代码,并在应用查看器中实时预览可运行的单文件 HTML 应用。全栈使用 Supabase(项目 pofchtyjqwevchiiqags):Auth 认证、Postgres/RLS 数据持久化、Edge Functions 承载 AI 生成与语音转写;未配置 Supabase 环境变量时自动降级为演示模式(浏览器内存数据)。
 
-## 功能全景(T1–T26)
+## 功能全景(T1–T27)
 
 ### 全局框架
 - 左右分栏布局:左侧边栏可折叠、可拖拽调宽(react-resizable-panels)
@@ -21,8 +21,9 @@
 
 ### 对话详情页(/chat/:conversationId)
 - 提交即创建会话并跳转;Sidebar 历史会话直达;可返回首页
-- 深色对话栏:用户消息/计划卡/Agent 输出/代码进度完整回放;生成中提交自动入队续跑;停止可用
-- 应用查看器页签:概览(iframe 预览 + 源码)/编辑器(只读源码)/云/文件/增长(空态占位)
+- 浅色对话栏(T27):`bg-white` 白底深色字,用户消息/计划卡/Agent 输出/代码进度完整回放;生成中提交自动入队续跑;停止可用
+- 状态与反馈浅色化(T27):状态徽标、执行计划卡、生成失败卡(浅红底深红字)、空态、演示入口、消息队列面板统一浅色语义变量
+- 应用查看器页签:概览(iframe 预览 + 源码)/编辑器(只读源码)/云/文件/增长(空态占位);源码查看器与 HTML 编辑器为白底深色字(T27)
 - 刷新恢复:历史消息回放、conversation_id 关联项目自动加载(T16);消息按 metadata 恢复【演示模式】标识与计划卡,项目按 is_demo 恢复查看器徽标(T25)
 - 历史版本面板(T25):版本列表(时间/来源/字节数)、点击切换预览不落库、一键回滚(回滚生成新版本、不覆盖旧快照)、在线编辑保存、HTML 导出;版本拉取含加载态与真取消重试,刷新后 v1–v4 稳定恢复
 - 窄屏适配
@@ -106,6 +107,8 @@ VITE_SUPABASE_ANON_KEY=<你的 Supabase anon key>
 | `t22-theme-icon-walkthrough.mjs` | 主题图标/失败卡重新生成续跑 | 16/16 PASS |
 | `t23-demo-mode-walkthrough.mjs` | 显式演示模式全链路/无静默回退 | 14/14 PASS |
 | `t25-versioning-walkthrough.mjs` | 402 失败卡/两轮增量 v1→v2/版本面板/回滚 v3/在线编辑 v4/导出/刷新恢复 | 26/26 PASS |
+| `t26-archive-walkthrough.mjs` | 会话归档过滤/收藏豁免/归档直达守卫/数据不删除 | 14/14 PASS |
+| `t27-light-theme-walkthrough.mjs` | 详情页左侧及相关状态浅色体系(实测背景与文字亮度,含源码/编辑器/两类菜单/刷新回放) | 17/17 PASS |
 
 后端验证脚本(`app/backend/scripts/`):`e2e_verify.py`(认证/资料/工作区/项目/RLS 隔离/越权拦截)、`test_agent_e2e.py`(登录态 AI SSE E2E)、`test_t9_baseline.py`(5 类生成质量门槛)、`test_transcribe.py`(语音转写)、`deploy_function.py`(Edge Function 部署)。
 

@@ -79,7 +79,7 @@ export default function AppPreview({ app, onClose }: AppPreviewProps) {
           className="h-full w-full flex-1 bg-white"
         />
       ) : (
-        <pre className="flex-1 overflow-auto bg-[#0d1117] p-4 text-[12px] leading-relaxed text-[#c9d1d9]">
+        <pre className="flex-1 overflow-auto bg-white p-4 text-[12px] leading-relaxed text-slate-800">
           <code>{file.content}</code>
         </pre>
       )}

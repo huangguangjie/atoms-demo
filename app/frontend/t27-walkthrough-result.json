@@ -1,0 +1,94 @@
+{
+  "ts": 1789954530675,
+  "email": "t27-1789954530675@atoms.test",
+  "pass": 17,
+  "total": 17,
+  "steps": [
+    {
+      "name": "T27-01 注册测试账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "T27-02 登录注入并进入首页",
+      "ok": true,
+      "detail": "t27-1789954530675 的 Atoms"
+    },
+    {
+      "name": "T27-03 提交进入详情页",
+      "ok": true,
+      "detail": "http://localhost:3000/chat/1ef613a9-fcae-41da-a528-c687a4ed48ba"
+    },
+    {
+      "name": "T27-04 左侧对话栏为浅色背景",
+      "ok": true,
+      "detail": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "T27-05 左侧对话栏文字为深色",
+      "ok": true,
+      "detail": "rgb(2, 8, 23)"
+    },
+    {
+      "name": "T27-06 状态徽标浅色底+深色字",
+      "ok": true,
+      "detail": "bg=rgb(241, 245, 249) fg=rgb(100, 116, 139)"
+    },
+    {
+      "name": "T27-07 失败卡为浅色背景(rose-50)",
+      "ok": true,
+      "detail": "bg=rgb(255, 241, 242)"
+    },
+    {
+      "name": "T27-08 演示应用渲染于查看器",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T27-09 演示标识/消息文字颜色正常(无白字白底)",
+      "ok": true,
+      "detail": "fg=rgb(2, 8, 23)"
+    },
+    {
+      "name": "T27-10 源码查看器白底",
+      "ok": true,
+      "detail": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "T27-11 源码查看器深色字",
+      "ok": true,
+      "detail": "rgb(30, 41, 59)"
+    },
+    {
+      "name": "T27-12 编辑器只读区白底深色字",
+      "ok": true,
+      "detail": "bg=rgb(255, 255, 255) fg=rgb(30, 41, 59)"
+    },
+    {
+      "name": "T27-13 HTML 编辑器白底深色字",
+      "ok": true,
+      "detail": "bg=rgb(255, 255, 255) fg=rgb(30, 41, 59)"
+    },
+    {
+      "name": "T27-14 # 引用菜单浅色底+深色字",
+      "ok": true,
+      "detail": "bg=rgb(255, 255, 255) fg=rgb(2, 8, 23)"
+    },
+    {
+      "name": "T27-15 + 号菜单面板浅色底+深色字",
+      "ok": true,
+      "detail": "bg=rgb(255, 255, 255) fg=rgb(2, 8, 23)"
+    },
+    {
+      "name": "T27-16 刷新回放后对话栏仍为浅色",
+      "ok": true,
+      "detail": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "T27-17 控制台无未预期错误",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": []
+}

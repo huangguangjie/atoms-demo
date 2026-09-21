@@ -389,7 +389,7 @@ function AppViewer({
           className="h-full w-full flex-1 bg-white"
         />
       ) : (
-        <pre className="min-h-0 flex-1 overflow-auto bg-[#0d1117] p-4 text-[12px] leading-relaxed text-[#c9d1d9]">
+        <pre className="min-h-0 flex-1 overflow-auto border-t border-border bg-white p-4 text-[12px] leading-relaxed text-slate-800">
           <code>{displayHtml}</code>
         </pre>
       )}
@@ -1124,17 +1124,17 @@ export default function ChatDetailPage() {
       {/* 主体:左深色对话栏 + 中部应用查看器(窄屏纵向堆叠,保证对话区始终可用) */}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {chatPanelOpen && (
-          <div className="flex h-[46%] w-full shrink-0 flex-col bg-zinc-950 text-zinc-100 md:h-auto md:w-[340px]">
+          <div className="flex h-[46%] w-full shrink-0 flex-col border-r border-border bg-white text-foreground md:h-auto md:w-[340px]">
             {/* 对话栏头部:会话状态 + 停止生成 */}
-            <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/10 px-3">
-              <MessagesSquare className="h-4 w-4 shrink-0 text-zinc-400" />
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-300">
+            <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+              <MessagesSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
                 {conversation?.title ?? '对话'}
               </span>
               {generating ? (
                 <>
-                  <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-300">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                  <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                     生成中
                   </span>
                   <Button
@@ -1147,7 +1147,7 @@ export default function ChatDetailPage() {
                   </Button>
                 </>
               ) : (
-                <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-zinc-400">
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                   空闲
                 </span>
               )}
@@ -1160,18 +1160,18 @@ export default function ChatDetailPage() {
                   <ChatMessage key={message.id} message={message} />
                 ))}
                 {messagesLoaded && messages.length === 0 && (
-                  <p className="rounded-xl border border-white/10 bg-zinc-900 p-3 text-xs leading-5 text-zinc-400">
+                  <p className="rounded-xl border border-border bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
                     暂无消息,在下方输入需求开始与智能体对话。
                   </p>
                 )}
                 {/* T21:生成失败错误卡——保留需求原文与会话上下文,提供明确的重试入口 */}
                 {failedPrompt && !generating && (
-                  <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3">
-                    <p className="text-xs font-medium text-rose-200">生成失败</p>
-                    <p className="mt-1 break-words text-[11px] leading-5 text-rose-200/80">
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                    <p className="text-xs font-medium text-rose-700">生成失败</p>
+                    <p className="mt-1 break-words text-[11px] leading-5 text-rose-600">
                       {lastErrorMessage}
                     </p>
-                    <p className="mt-1.5 break-all text-[11px] leading-5 text-rose-200/60">
+                    <p className="mt-1.5 break-all text-[11px] leading-5 text-rose-500">
                       需求已保留:「{failedPrompt}」,会话上下文未丢失,可直接重试。
                     </p>
                     <Button
@@ -1185,7 +1185,7 @@ export default function ChatDetailPage() {
                     {/* T23:AI 网关故障时的显式演示模式入口——用户主动触发,仅本地生成真实可交互应用 */}
                     <Button
                       size="sm"
-                      className="mt-2 ml-2 h-7 gap-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 px-3 text-xs text-amber-200 hover:bg-amber-400/20"
+                      className="mt-2 ml-2 h-7 gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 text-xs text-amber-700 hover:bg-amber-100"
                       onClick={handleDemoGenerate}
                     >
                       <FlaskConical className="h-3 w-3" />
@@ -1198,11 +1198,11 @@ export default function ChatDetailPage() {
 
             {/* 队列面板:生成中提交的需求在此排队 */}
             {queue.length > 0 && (
-              <div className="mx-3 mb-2 rounded-xl border border-white/10 bg-zinc-900 p-2.5">
-                <p className="mb-1.5 text-xs font-medium text-zinc-300">队列 ({queue.length})</p>
+              <div className="mx-3 mb-2 rounded-xl border border-border bg-muted/50 p-2.5">
+                <p className="mb-1.5 text-xs font-medium text-foreground">队列 ({queue.length})</p>
                 <div className="space-y-1">
                   {queue.map((item, index) => (
-                    <p key={`${index}-${item.slice(0, 8)}`} className="truncate text-xs text-zinc-500">
+                    <p key={`${index}-${item.slice(0, 8)}`} className="truncate text-xs text-muted-foreground">
                       · {item}
                     </p>
                   ))}
@@ -1333,10 +1333,10 @@ export default function ChatDetailPage() {
                       onChange={(event) => setEditHtml(event.target.value)}
                       aria-label="HTML 源码编辑器"
                       spellCheck={false}
-                      className="min-h-0 flex-1 resize-none bg-[#0d1117] p-4 font-mono text-[12px] leading-relaxed text-[#c9d1d9] outline-none"
+                      className="min-h-0 flex-1 resize-none bg-white p-4 font-mono text-[12px] leading-relaxed text-slate-800 outline-none"
                     />
                   ) : (
-                    <pre className="min-h-0 flex-1 overflow-auto bg-[#0d1117] p-4 text-[12px] leading-relaxed text-[#c9d1d9]">
+                    <pre className="min-h-0 flex-1 overflow-auto bg-white p-4 text-[12px] leading-relaxed text-slate-800">
                       <code>{app.files[0].content}</code>
                     </pre>
                   )}
