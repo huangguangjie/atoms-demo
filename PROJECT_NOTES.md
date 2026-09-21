@@ -1,6 +1,6 @@
 # PROJECT_NOTES — 类 Atoms 全栈应用 · 实现笔记
 
-> 面向评审与后续迭代的说明:实现思路与关键取舍、架构设计、当前功能完成度(T1–T25)、计划功能优先级排期。
+> 面向评审与后续迭代的说明:实现思路与关键取舍、架构设计、当前功能完成度(T1–T29)、计划功能优先级排期。
 > 详细文档见 `docs/`(系统设计 / 数据模型 / 部署 / 使用说明),任务级进度明细见 `.atoms/PROGRESS.md`。
 
 ## 一、实现思路与关键取舍
@@ -54,7 +54,7 @@
 3. **代码硬约束 CODE_SYSTEM**:禁无约束绝对定位、统一间距圆角、强制移动端适配、纯 HTML 文档输出、行数预算;
 4. **产物净化 sanitizeHtml**:剥离 Markdown 围栏与杂文,保证 iframe srcDoc 直接运行。
 
-SSE 事件协议:`message / plan / step-* / code-delta / app / done / error`;140s 软超时,超时/流中断/HTML 不完整时主动 error + done 收尾,不静默截断。
+SSE 事件协议:`message / plan / step-* / code-delta / app / done / error`;130s 软超时(`SOFT_DEADLINE_MS=130_000`),超时/流中断/HTML 不完整时主动 error + done 收尾,不静默截断;交付前经 `findScriptSyntaxErrors` 对内联 `<script>` 做纯语法校验并支持一次内容保全式自动修复(T29)。
 
 ### 4. 重试与降级链路(T21/T23)
 ```

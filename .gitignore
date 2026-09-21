@@ -59,4 +59,5 @@ __pycache__
 
 # 诊断与临时产物(不入库)
 .tmp-*
+.t25_check.sql
 app/backend/scripts/.t9_out/
