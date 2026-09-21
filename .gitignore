@@ -56,3 +56,7 @@ test-results/
 pnpm-lock.yaml
 *.pyc
 __pycache__
+
+# 诊断与临时产物(不入库)
+.tmp-*
+app/backend/scripts/.t9_out/
