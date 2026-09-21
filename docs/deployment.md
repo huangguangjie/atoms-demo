@@ -83,7 +83,7 @@ server {
 
 - Vite 构建期(`app/frontend/vite.config.ts`)读取当前 Git SHA / ref / 构建时间,经 `define` 注入;`src/main.tsx` 挂载为 `window.__ATOMS_BUILD__`,类型声明见 `src/vite-env.d.ts`。
 - 线上核对方式:在已发布站点控制台执行 `window.__ATOMS_BUILD__`,与本次推送的 `main` 提交 SHA 比对,即可确认部署产物对应提交。
-- 本轮核验值:SHA `6523600eebfeff125fcc4a44494d4ae2353ae0df`、ref `main`、builtAt `2026-09-21T12:43:02.184Z`;构建处理 1877 个模块,预渲染 `/` 与 `/blog/`。
+- 核验口径:注入值取自**当次构建所在的提交**,因此「部署产物注入的 SHA」应恒等于该次发布提交 SHA;本轮以发布提交为工作树重新构建,实测注入 SHA 与远端 `main` 提交一致(ref `main`),构建处理 1877 个模块并预渲染 `/` 与 `/blog/`。
 
 ## 5. 发布后验证清单
 
