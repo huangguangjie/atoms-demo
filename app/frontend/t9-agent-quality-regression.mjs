@@ -123,17 +123,29 @@ try {
   log('会话/消息/项目落库 201', postsOk, JSON.stringify(result.posts));
 
   // 10) 刷新后历史回放:最近对话恢复
+  // T28 回归适配:①T16 起详情页为整页布局(无全局 aside),刷新后停留在 /chat/:id,
+  // 需先返回首页再断言侧边栏最近对话;②侧边栏为异步加载(会话恢复+空间初始化+列表查询),
+  // 固定 4s 等待在真实 AI 链路下存在时序竞态,改为轮询等待
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4000);
+  if (page.url().includes('/chat/')) {
+    const backHome = page.getByText('返回首页').first();
+    const clicked = await backHome.waitFor({ state: 'visible', timeout: 10000 })
+      .then(async () => { await backHome.click(); return true; })
+      .catch(() => false);
+    if (!clicked) await page.goto(APP, { waitUntil: 'domcontentloaded' });
+  }
   const recentItem = page.locator('aside').getByText(PROMPT.slice(0, 12)).first();
-  let recentVisible = await recentItem.isVisible().catch(() => false);
-  if (!recentVisible) {
-    // 会话标题可能截断,按首 6 字兜底
-    recentVisible = await page.locator('aside').getByText(PROMPT.slice(0, 6)).first().isVisible().catch(() => false);
+  const recentItemFallback = page.locator('aside').getByText(PROMPT.slice(0, 6)).first();
+  let recentVisible = false;
+  for (let i = 0; i < 15 && !recentVisible; i++) {
+    await page.waitForTimeout(2000);
+    recentVisible = await recentItem.isVisible().catch(() => false)
+      || await recentItemFallback.isVisible().catch(() => false);
   }
   log('刷新后最近对话可见', recentVisible);
   if (recentVisible) {
-    await recentItem.click();
+    const target = await recentItem.isVisible().catch(() => false) ? recentItem : recentItemFallback;
+    await target.click();
     await page.getByText('执行计划').first().waitFor({ state: 'visible', timeout: 15000 });
     log('历史回放恢复计划卡与消息', true);
   }

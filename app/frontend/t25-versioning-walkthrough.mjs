@@ -109,7 +109,18 @@ page.on('requestfailed', (req) => {
   netLog.push(`REQX ${u.replace(BASE, '').slice(0, 160)} :: ${req.failure()?.errorText ?? ''}`);
 });
 
-/** 等待 402 失败卡出现(真实 Edge Function 余额错误,确定性不重试,数秒内出现) */
+// T28 回归适配:AI 网关已恢复,原走查依赖的真实 402 外部故障窗口不再存在。
+// 改用路由拦截对 Edge Function 返回确定性 402(余额不足),保留「失败卡→显式演示」全链路验证;
+// 演示模式为本地智能体,不发网络请求,不受拦截影响。
+await page.route('**/app_atoms_agent_generate*', (route) =>
+  route.fulfill({
+    status: 402,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'AI 账户余额不足,请充值后重试' }),
+  }),
+);
+
+/** 等待 402 失败卡出现(路由模拟的确定性余额错误,不重试,数秒内出现) */
 async function waitErrorCard() {
   const errorCard = page.getByText('生成失败', { exact: true }).first();
   await errorCard.waitFor({ state: 'visible', timeout: 90000 });
@@ -146,7 +157,7 @@ try {
 
   // 4) 真实 402 链路:确定性余额错误显式失败卡(不重试、无静默回退)
   await waitErrorCard();
-  log('真实 Edge Function 402 显式失败卡(无静默回退)', true);
+  log('Edge Function 402(路由模拟)显式失败卡(无静默回退)', true);
   const guidance = await page.getByText(/额度已耗尽/).first()
     .waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
   log('失败卡含 402 余额不足专属指引文案', guidance);

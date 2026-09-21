@@ -719,6 +719,8 @@ export default function ChatDetailPage() {
     let finalMessage = '';
     let errorMessage = '';
     let planSteps: string[] = [];
+    // T28 幂等守卫:同一轮生成只允许落库一次项目/版本,防止重复 app 事件造成重复项目
+    let appPersisted = false;
 
     try {
       // 主题真实生效:所选主题名传入生成链路;T15 未选择主题时传「默认」且不注入主题指令
@@ -735,6 +737,9 @@ export default function ChatDetailPage() {
           if (event.type === 'app') {
             setApp(event.app);
             setCenterTab('overview');
+            // T28 幂等:同一轮生成只落库一次,重复 app 事件(重试/服务端重复发送)不再重复建项目或版本
+            if (appPersisted) return;
+            appPersisted = true;
             void handleAppCreated(event.app, {
               incremental: Boolean(previousHtml),
               changeSummary: text,

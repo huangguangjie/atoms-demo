@@ -1,6 +1,6 @@
 {
-  "ts": 1789954530675,
-  "email": "t27-1789954530675@atoms.test",
+  "ts": 1789961393373,
+  "email": "t27-1789961393373@atoms.test",
   "pass": 17,
   "total": 17,
   "steps": [
@@ -12,12 +12,12 @@
     {
       "name": "T27-02 登录注入并进入首页",
       "ok": true,
-      "detail": "t27-1789954530675 的 Atoms"
+      "detail": "t27-1789961393373 的 Atoms"
     },
     {
       "name": "T27-03 提交进入详情页",
       "ok": true,
-      "detail": "http://localhost:3000/chat/1ef613a9-fcae-41da-a528-c687a4ed48ba"
+      "detail": "http://localhost:3000/chat/fd854368-7bf9-4c6a-863c-02596ab8a552"
     },
     {
       "name": "T27-04 左侧对话栏为浅色背景",

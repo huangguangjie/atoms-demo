@@ -67,6 +67,17 @@ page.on('response', (r) => {
 });
 page.on('pageerror', (e) => result.consoleErrors.push(`pageerror: ${String(e).slice(0, 200)}`));
 
+// T28 回归适配:AI 网关已恢复,原走查依赖的 402/502 外部故障窗口不再存在。
+// 改用路由拦截对 Edge Function 返回确定性 402(余额不足),保证失败卡场景稳定可断言;
+// 演示模式为本地智能体,不发网络请求,不受拦截影响。
+await page.route('**/app_atoms_agent_generate*', (route) =>
+  route.fulfill({
+    status: 402,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'AI 账户余额不足,请充值后重试' }),
+  }),
+);
+
 try {
   // 1) 注册 + 登录注入
   const signupResp = await fetch(`${BASE}/auth/v1/signup`, {

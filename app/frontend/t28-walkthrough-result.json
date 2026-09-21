@@ -1,0 +1,65 @@
+{
+  "task": "T28 Agent 死循环修复",
+  "script": "t28-loop-repro.mjs",
+  "method": "Mock SSE 服务器驱动真实 agent.ts(esbuild 打包 + supabase 桩)",
+  "total": 11,
+  "pass": 11,
+  "checks": [
+    {
+      "label": "S1a 已产出 app 后优雅截断:上游只调用 1 次(修复前会整轮重跑≥2次)",
+      "ok": true,
+      "detail": "hits=1, events=plan,code-start,code-delta,code-delta,code-delta,app,done"
+    },
+    {
+      "label": "S1a 收敛信号:app 之后以 done 结束(产物已到手,静默收敛)",
+      "ok": true,
+      "detail": "events=plan,code-start,code-delta,code-delta,code-delta,app,done"
+    },
+    {
+      "label": "S1a 不得出现重复 plan(app 之后不再重新规划)",
+      "ok": true,
+      "detail": "planCount=1"
+    },
+    {
+      "label": "S1b 已产出 app 后 socket 硬截断:上游只调用 1 次(app 已交付禁止重跑)",
+      "ok": true,
+      "detail": "hits=1, events=plan,code-start,code-delta,code-delta,code-delta,app,done"
+    },
+    {
+      "label": "S1b 收敛信号:app 之后以 done 结束",
+      "ok": true,
+      "detail": "events=plan,code-start,code-delta,code-delta,code-delta,app,done"
+    },
+    {
+      "label": "S2 正常收尾:上游只调用 1 次",
+      "ok": true,
+      "detail": "hits=1"
+    },
+    {
+      "label": "S2 收敛信号:app + done",
+      "ok": true,
+      "detail": "events=plan,code-start,code-delta,code-delta,code-delta,app,done"
+    },
+    {
+      "label": "S3 确定性错误:上游只调用 1 次(不自动重试)",
+      "ok": true,
+      "detail": "hits=1"
+    },
+    {
+      "label": "S3 错误透出:收到 error 事件且以 done 收敛",
+      "ok": true,
+      "detail": "events=plan,error,done"
+    },
+    {
+      "label": "S4 未产出 app 前截断:允许自动重试(hits>1,保留 T21 韧性)",
+      "ok": true,
+      "detail": "hits=4, events=plan,code-start,code-delta,message,plan,code-start,code-delta,message,plan,code-start,code-delta,message,plan,code-start..."
+    },
+    {
+      "label": "S4 重试封顶:整轮调用 ≤4 次,不无限循环",
+      "ok": true,
+      "detail": "hits=4"
+    }
+  ],
+  "finished_at": "2026-09-21T03:50:10.419Z"
+}

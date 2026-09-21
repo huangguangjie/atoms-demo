@@ -165,29 +165,49 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = '';
   let sawDone = false;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === '[DONE]') continue;
-      try {
-        const event = JSON.parse(payload) as AgentEvent;
-        if (event.type === 'done') sawDone = true;
-        options.onEvent(event);
-      } catch {
-        // 忽略无法解析的流分片
+  let sawApp = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const event = JSON.parse(payload) as AgentEvent;
+          if (event.type === 'done') sawDone = true;
+          if (event.type === 'app') sawApp = true;
+          options.onEvent(event);
+        } catch {
+          // 忽略无法解析的流分片
+        }
       }
     }
+  } catch (error) {
+    // T28 终止守卫:流读取中途连接被硬截断(socket hang up 等)。
+    // app 事件已交付时产物到手,按成功收敛,绝不整轮重跑(重新规划→重新生成);
+    // 未交付产物则原样抛出,交由上层按 T21 瞬时错误有限重试。
+    if (sawApp && !options.signal.aborted) {
+      options.onEvent({ type: 'done', stopped: false });
+      return;
+    }
+    throw error;
   }
-  // 服务端(含软超时收尾分支)总会以 done 结束;流结束却未收到 done,
-  // 说明连接被异常截断(如平台超时回收),必须以真实错误透出,不允许静默当作成功
+  // T28 终止守卫:产物(app 事件)已交付时,流结束即视为成功收敛。
+  // 平台超时回收/网关提前 FIN 可能丢掉末尾 done 分片,但那不代表生成失败;
+  // 若此时抛「连接中断」会触发整轮重跑(重新规划→重新生成),即用户看到的
+  // 「代码 100% 后重新规划再生成」死循环。补发 done 事件让调用方正常结束流式态。
   if (!sawDone && !options.signal.aborted) {
+    if (sawApp) {
+      options.onEvent({ type: 'done', stopped: false });
+      return;
+    }
+    // 流结束却未收到 done 且产物未交付:连接被异常截断,以真实错误透出(允许瞬时重试)
     throw new Error('AI 生成连接中断,请重试');
   }
 }
@@ -214,12 +234,22 @@ export async function runAgent(options: RunAgentOptions): Promise<void> {
     return;
   }
   if (getSupabaseFunctionUrl(AGENT_FUNCTION_NAME)) {
+    // T28 终止守卫:本次 runAgent 生命周期内一旦收到 app 事件即视为产物已交付,
+    // 之后任何收尾异常都不得触发整轮重跑(重新规划→重新生成),只能补发 done 收敛。
+    let deliveredApp = false;
+    const guarded: RunAgentOptions = {
+      ...options,
+      onEvent: (event) => {
+        if (event.type === 'app') deliveredApp = true;
+        options.onEvent(event);
+      },
+    };
     // T21:瞬时故障(网络抖动/5xx/429)自动重试 3 次,指数退避 1.2s→2.4s→4.8s;仍失败才向 UI 透出真实错误
     const MAX_ATTEMPTS = 4;
     const RETRY_DELAYS_MS = [1200, 2400, 4800];
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
-        await runEdgeAgent(options);
+        await runEdgeAgent(guarded);
         return;
       } catch (error) {
         if (options.signal.aborted) {
@@ -227,6 +257,12 @@ export async function runAgent(options: RunAgentOptions): Promise<void> {
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
+        // T28:产物已交付后禁止自动重跑,补发 done 正常收敛(错误仅日志,不打断已生成的应用)
+        if (deliveredApp) {
+          console.warn('[agent] 产物已交付后连接收尾异常,按成功收敛,不重跑:', message);
+          options.onEvent({ type: 'done', stopped: false });
+          return;
+        }
         if (attempt < MAX_ATTEMPTS && isTransientAgentError(message)) {
           console.warn('[agent] 连接瞬时中断,自动重试:', message);
           options.onEvent({
