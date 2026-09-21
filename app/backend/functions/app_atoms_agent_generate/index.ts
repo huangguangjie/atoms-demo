@@ -168,6 +168,8 @@ const CODE_SYSTEM = [
   '- 响应式必做:@media 适配移动端;canvas 等定宽元素 max-width:100%;可点元素不小于 40px。',
   '【内容与文案】全部使用真实可读的中文文案;说明/文档类内容用小标题+段落+<ul><li> 结构;界面禁止出现 #、*、``` 等 Markdown 原始符号或代码片段痕迹。',
   '【工程要求】内联全部 CSS 与 JS,无外部依赖;交互真实可用,不使用 alert/confirm 阻塞弹窗。',
+  '【JS 语法硬约束】每个 const/let 声明必须紧跟 = 初始化器;禁止孤立变量名与残留逗号(错误示例:const a=1,b,fn=>fn(),必须写成 const b=默认值)。',
+  '箭头函数、对象字面量、括号与引号必须成对闭合;输出前逐行自检内联脚本可被浏览器直接解析执行,任何一处语法错误都视为无效产物。',
   '总代码量必须控制在 250 行以内(约 8KB):注释与空行最少化,样式精炼复用,功能优先保证核心交互完整;宁可精简也不允许超时截断,必须一次性输出到 </html>。',
 ].join('\n');
 
@@ -188,6 +190,79 @@ function sanitizeHtml(raw: string): string {
   const endIdx = out.toLowerCase().lastIndexOf('</html>');
   if (endIdx !== -1) out = out.slice(0, endIdx + '</html>'.length);
   return out.trim();
+}
+
+// T29 产物语法自检:提取内联 <script> 用 new Function 做纯语法校验(不执行函数体),
+// 真实链路复测发现模型偶发输出 `const a=1,b,fn=>fn()` 这类缺初始化器的非法声明,导致 iframe 运行期 SyntaxError
+function findScriptSyntaxErrors(html: string): string[] {
+  const errors: string[] = [];
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null = re.exec(html);
+  while (m !== null) {
+    const attrs = m[1] ?? '';
+    const code = m[2] ?? '';
+    m = re.exec(html);
+    if (/\bsrc\s*=/i.test(attrs)) continue;
+    if (/type\s*=\s*["']?(module|application\/json)/i.test(attrs)) continue;
+    if (!code.trim()) continue;
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function(code);
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes('SyntaxError')) errors.push(msg.slice(0, 160));
+    }
+  }
+  return errors;
+}
+
+// 修复轮专用:消费上游 SSE 但只收集完整文本(不透传 delta,避免前端代码区重复渲染)
+async function collectFullText(
+  body: ReadableStream<Uint8Array>,
+  deadlineLeftMs: number,
+): Promise<{ text: string; timedOut: boolean }> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const started = Date.now();
+  let text = '';
+  let buffer = '';
+  let timedOut = false;
+  for (;;) {
+    const remaining = deadlineLeftMs - (Date.now() - started);
+    if (remaining <= 0) {
+      timedOut = true;
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+    const raced = await Promise.race([
+      reader.read(),
+      new Promise<'deadline'>((resolve) => setTimeout(() => resolve('deadline'), remaining)),
+    ]);
+    if (raced === 'deadline') {
+      timedOut = true;
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+    const { done, value } = raced;
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const chunk = JSON.parse(payload);
+        const piece = chunk?.choices?.[0]?.delta?.content;
+        if (typeof piece === 'string') text += piece;
+      } catch {
+        // 忽略无法解析的分片
+      }
+    }
+  }
+  return { text, timedOut };
 }
 
 Deno.serve(async (req) => {
@@ -347,7 +422,8 @@ Deno.serve(async (req) => {
     // T25:增量修改——把上一版完整 HTML 作为上下文注入,要求在原版本上定向修改
     ...(previousHtml
       ? [
-          '当前版本完整 HTML(在此基础上修改,除本次修改点外保持原样):',
+          '当前版本完整 HTML 如下。请把它当作唯一基线,只做本次要求的修改;' +
+            '其中所有已有可见文案(含标题、字符串常量、按钮文字)与结构必须原样保留:',
           '```html',
           previousHtml,
           '```',
@@ -362,11 +438,26 @@ Deno.serve(async (req) => {
     '既定执行计划(生成时必须遵循):',
     ...planSteps.map((s, i) => `${i + 1}. ${s}`),
     previousHtml
-      ? '请在当前版本基础上完成上述修改,直接输出修改后的完整单文件 HTML(禁止只输出片段或差异说明)。'
+      ? '请在当前版本基础上完成上述修改,直接输出修改后的完整单文件 HTML(禁止只输出片段或差异说明)。' +
+        '输出前逐条自检:当前版本中的每一段可见文字是否都仍原样存在于你的输出中(本次要求修改的除外)。'
       : '请严格按以上意图、布局指令与计划,直接给出完整单文件 HTML。',
   ]
     .filter(Boolean)
     .join('\n');
+
+  // T29 增量保留硬约束:真实链路复测发现第二轮增量产物会「重写式精简」丢失第一轮既有文案
+  // (如标题中的字面字符串),故增量模式下显式禁止改动未涉及内容,并放宽行数上限避免为省行删内容。
+  const INCREMENT_SYSTEM = [
+    '',
+    '【增量修改硬约束(优先级高于上文所有精简要求)】',
+    '- 本次任务是在用户提供的「当前版本完整 HTML」上做定向修改:除用户本次明确要求新增或调整的部分外,',
+    '  当前版本中的所有可见文字(标题、副标题、按钮文案、提示语、示例数据)、DOM 结构与样式必须原样保留,一字不改。',
+    '- 禁止重写、重新组织、合并、精简或替换未涉及本次需求的任何模块;禁止更换标题措辞或删改字符串常量。',
+    '- 新产物 = 当前版本 + 本次修改的合并结果,而不是重新设计的新页面。',
+    '- 上文 250 行上限在增量模式下放宽到 340 行;若两者冲突,一律以「完整保留当前版本内容」为先,绝不允许为控制行数删掉既有内容。',
+    '- 输出前自检:当前版本里每一段可见文字都必须能在新产物中原样找到(本次要求修改的除外),缺失即为错误输出。',
+  ].join('\n');
+  const codeSystem = previousHtml ? CODE_SYSTEM + INCREMENT_SYSTEM : CODE_SYSTEM;
 
   const callGateway = (userContent: string, model: string) =>
     fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
@@ -378,7 +469,7 @@ Deno.serve(async (req) => {
         max_tokens: MAX_TOKENS,
         enable_thinking: false,
         messages: [
-          { role: 'system', content: CODE_SYSTEM },
+          { role: 'system', content: codeSystem },
           { role: 'user', content: userContent },
         ],
       }),
@@ -561,7 +652,41 @@ Deno.serve(async (req) => {
       }
 
       // T9 第 4 步:产物净化后交付,避免围栏/前后杂文进入预览
-      const finalHtml = sanitizeHtml(html);
+      let finalHtml = sanitizeHtml(html);
+      // T29 语法自检:模型偶发输出缺初始化器的 const 声明导致 iframe 运行期 SyntaxError,
+      // 交付前做一次内容保全式修复(仅修语法、不改文案/结构/逻辑);修复失败或预算不足则保留原产物并留痕
+      let syntaxErrors = findScriptSyntaxErrors(finalHtml);
+      let syntaxFixed = false;
+      if (finalHtml.includes('</html>') && syntaxErrors.length > 0) {
+        const remainingBudget = SOFT_DEADLINE_MS - (Date.now() - startedAt);
+        console.warn(JSON.stringify({ requestId, syntaxErrorsBeforeFix: syntaxErrors, remainingBudget }));
+        if (remainingBudget > 25_000) {
+          send({ type: 'message', content: '检测到产物代码存在语法问题,正在自动修复…' });
+          try {
+            const fixResp = await callGateway(
+              '以下单文件 HTML 应用的 JavaScript 存在语法错误:' +
+                `${syntaxErrors.join('; ').slice(0, 300)}。\n` +
+                '请输出修复后的完整 HTML 文档:只允许修复语法错误(如 const/let 缺少 = 初始化器、残留逗号、未闭合括号),' +
+                '所有可见文字、DOM 结构、样式与功能逻辑必须原样保留,禁止任何精简或改写;' +
+                '第一个字符必须是 <,不要输出解释或代码围栏。\n\n' +
+                finalHtml,
+              activeModel,
+            );
+            if (fixResp.ok && fixResp.body) {
+              const { text: fixedText } = await collectFullText(fixResp.body, remainingBudget - 5_000);
+              const fixedHtml = sanitizeHtml(fixedText);
+              if (fixedHtml.includes('</html>') && findScriptSyntaxErrors(fixedHtml).length === 0) {
+                finalHtml = fixedHtml;
+                syntaxFixed = true;
+                syntaxErrors = [];
+              }
+            }
+          } catch (error) {
+            console.error(requestId, '语法修复调用失败,保留原产物', String(error).slice(0, 200));
+          }
+          console.log(JSON.stringify({ requestId, syntaxFixed, outputLength: finalHtml.length }));
+        }
+      }
       if (finalHtml.includes('</html>')) {
         const lower = prompt.toLowerCase();
         const kind = /游戏|game/.test(lower)
@@ -611,6 +736,7 @@ Deno.serve(async (req) => {
           timedOut,
           finishReason,
           retried,
+          syntaxFixed,
           triedModels,
         }),
       );

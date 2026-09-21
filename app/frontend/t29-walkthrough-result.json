@@ -1,0 +1,193 @@
+{
+  "steps": [
+    {
+      "name": "注册新账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "登录注入并进入首页",
+      "ok": true,
+      "detail": "t29-1789965533829 的 Atoms"
+    },
+    {
+      "name": "停止生成:助手气泡收敛提示「已停止生成」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "停止生成:中止后无自动重跑(上游调用≤1)",
+      "ok": true,
+      "detail": "停止轮上游调用 1 次(点停止时已发出 1 次,请求已发出=true)"
+    },
+    {
+      "name": "停止生成:无失败卡、状态回空闲",
+      "ok": true,
+      "detail": "失败卡=false 空闲=true"
+    },
+    {
+      "name": "首轮真实生成完成(预览出现、状态空闲)",
+      "ok": true,
+      "detail": "耗时 20.4s"
+    },
+    {
+      "name": "T28 守卫:首轮上游调用=1(无整轮重跑)",
+      "ok": true,
+      "detail": "上游调用 1 次,状态 []"
+    },
+    {
+      "name": "T28 守卫:首轮计划卡唯一(无重复 plan)",
+      "ok": true,
+      "detail": "执行计划出现 1 次"
+    },
+    {
+      "name": "首轮无失败卡(一次收敛)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首轮项目落库且唯一(幂等)",
+      "ok": true,
+      "detail": "项目数 1 | T29R1MARK 番茄钟"
+    },
+    {
+      "name": "首轮写入 v1(首次生成)且 is_demo=false",
+      "ok": true,
+      "detail": "[\"v1:generation:首次生成\"]"
+    },
+    {
+      "name": "首轮产物含字面特征 T29R1MARK",
+      "ok": true,
+      "detail": "app_html 6038 字符"
+    },
+    {
+      "name": "第二轮真实增量完成(v2 落库)",
+      "ok": true,
+      "detail": "耗时 13.3s | label=增量修改:在番茄钟页面增加一个休息提醒开关按钮,按钮文字必须原样包含字符串 T29R2MA"
+    },
+    {
+      "name": "T28 守卫:第二轮上游调用=1",
+      "ok": true,
+      "detail": "上游调用 1 次,状态 []"
+    },
+    {
+      "name": "第二轮产物包含第一轮特征(增量保持)",
+      "ok": true,
+      "detail": "含R1=true 含R2=true"
+    },
+    {
+      "name": "版本链 v1/v2 连续且无重复版本号",
+      "ok": true,
+      "detail": "1,2"
+    },
+    {
+      "name": "增量修改不新建项目(仍唯一)",
+      "ok": true,
+      "detail": "项目数 1"
+    },
+    {
+      "name": "Preview iframe 与第二轮产物一致",
+      "ok": true,
+      "detail": "srcdoc 6767 字符"
+    },
+    {
+      "name": "源码页签与第二轮产物一致",
+      "ok": true,
+      "detail": "源码 6767 字符"
+    },
+    {
+      "name": "版本面板展示 v1/v2 与来源标签",
+      "ok": true,
+      "detail": "v1=true v2=true"
+    },
+    {
+      "name": "版本切换查看 v1(提示条,不落库)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "回滚产生 v3(toast 确认)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "v3 回滚版本落库且内容与 v1 快照一致",
+      "ok": true,
+      "detail": "v1:generation,v2:generation,v3:rollback"
+    },
+    {
+      "name": "在线编辑保存并记录 v4",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "v4 edit 版本落库且项目含编辑特征",
+      "ok": true,
+      "detail": "label=在线编辑"
+    },
+    {
+      "name": "导出 HTML 与当前版本一致",
+      "ok": true,
+      "detail": "T29R1MARK-番茄钟.html | 6061 字符"
+    },
+    {
+      "name": "刷新回放:两轮用户消息恢复",
+      "ok": true,
+      "detail": "R1=true R2=true"
+    },
+    {
+      "name": "刷新回放:计划卡按 metadata 恢复",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新回放:查看器「生成应用」徽标恢复(真实链路非演示)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新回放:版本列表 4 项齐全",
+      "ok": true,
+      "detail": "历史版本 v4 修改 在线编辑 9/20/2026, 9:39:41 PM · 5.9 KB v3 回滚 回滚至 v1 9/20/2026, 9:39:39 PM · 5.9 KB v2 生成 增量修改:在番茄钟页面增加一个休息提醒开关按钮,按钮文字必须原样包含字符串 T29R2"
+    },
+    {
+      "name": "刷新回放:关联项目产物恢复至预览",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "无未预期控制台错误",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": [],
+  "artifactErrors": [],
+  "evidence": {
+    "stopRound": {
+      "upstreamCalls": 1
+    },
+    "round1": {
+      "upstreamCalls": 1,
+      "seconds": 20.4,
+      "htmlLength": 6038
+    },
+    "round2": {
+      "upstreamCalls": 1,
+      "seconds": 13.3,
+      "htmlLength": 6767
+    },
+    "versionChain": [
+      "v1:generation:首次生成",
+      "v2:generation:增量修改:在番茄钟页面增加一个休息提醒开关按钮,按钮文字必须原样包含字符串 T29R2MA",
+      "v3:rollback:回滚至 v1",
+      "v4:edit:在线编辑"
+    ],
+    "artifactErrors": [],
+    "totalSeconds": 49.5,
+    "efStatusAll": [
+      200,
+      200
+    ]
+  }
+}
