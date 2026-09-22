@@ -64,6 +64,12 @@ export interface Message {
 export interface MessageMeta {
   isDemo?: boolean;
   plan?: string[];
+  /** T32:本轮生成失败标记(失败不生效,刷新回放后恢复失败卡与「重新生成」入口) */
+  failed?: boolean;
+  /** T32:失败原因(友好文案,刷新回放后与实时失败卡一致) */
+  error?: string;
+  /** T32:失败当次的用户需求(刷新回放后「重新生成」可直接续跑) */
+  prompt?: string;
 }
 
 export interface CommunityApp {
@@ -840,6 +846,31 @@ export async function updateProjectAppHtml(
   }
 }
 
+/**
+ * T32 公开数据读取的瞬时鉴权吸收:
+ * 页面刚恢复会话或刚完成登录时,首个请求可能带着服务端尚不接受的令牌(时钟偏移导致的
+ * 「签发于未来」或刚过期的令牌)发出,PostgREST 会直接以 401 拒绝——而公开表(社区应用/模板)
+ * 本可匿名读取,却会因为这一次瞬时 401 静默变成空列表,且没有任何重试与提示。
+ * 这里仅对鉴权类错误做有限次重试,并在重试前主动刷新会话换取新令牌;
+ * 非鉴权类错误(网络/权限/语法)立即抛出,重试耗尽后仍原样抛出,不掩盖真实故障。
+ */
+async function withTransientAuthRetry<T>(label: string, run: () => Promise<T>): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const isAuthTransient = /401|jwt|token|unauthorized|未认证/i.test(message);
+      if (!isAuthTransient || attempt === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+      await supabase.auth.refreshSession().catch(() => undefined);
+    }
+  }
+  throw new Error(`${label}:${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
 export const COMMUNITY_CATEGORIES = [
   '全部',
   'Website',
@@ -856,18 +887,26 @@ export async function fetchCommunityApps(category: string): Promise<CommunityApp
   if (!isSupabaseConfigured) {
     return seedCommunityApps.filter((a) => category === '全部' || a.category === category);
   }
-  let query = supabase.from('community_apps').select('*');
-  if (category !== '全部') query = query.eq('category', category);
-  const { data } = await query.order('views', { ascending: false });
-  return (data as CommunityApp[]) ?? [];
+  // T32:公开读经瞬时鉴权吸收,避免首屏一次 401 就让发现区永久空列表
+  return withTransientAuthRetry('读取社区应用失败', async () => {
+    let query = supabase.from('community_apps').select('*');
+    if (category !== '全部') query = query.eq('category', category);
+    const { data, error } = await query.order('views', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data as CommunityApp[]) ?? [];
+  });
 }
 
 export async function fetchTemplates(category: string): Promise<Template[]> {
   if (!isSupabaseConfigured) {
     return seedTemplates.filter((t) => category === '全部' || t.category === category);
   }
-  let query = supabase.from('templates').select('*');
-  if (category !== '全部') query = query.eq('category', category);
-  const { data } = await query.order('created_at', { ascending: false });
-  return (data as Template[]) ?? [];
+  // T32:模板区同源处理——瞬时 401 自动刷新会话并重试,最终失败才向上抛出由调用方兜底
+  return withTransientAuthRetry('读取模板失败', async () => {
+    let query = supabase.from('templates').select('*');
+    if (category !== '全部') query = query.eq('category', category);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data as Template[]) ?? [];
+  });
 }

@@ -88,7 +88,7 @@
     {
       "name": "I7 并发后项目内容 == 最大版本快照(无半写)",
       "ok": true,
-      "detail": "项目内容 T31-TX-CONC-5 | 最新快照 v7 T31-TX-CONC-5"
+      "detail": "项目内容 T31-TX-CONC-3 | 最新快照 v7 T31-TX-CONC-3"
     },
     {
       "name": "I8 客户端中断请求(已触发 abort)",
@@ -115,15 +115,15 @@
       ],
       "consistent": true
     },
-    "projectId": "9758bcc9-86c0-426e-864a-03cff474c01b",
+    "projectId": "2d0d0574-71dd-443a-99c9-77e1f7c1ca2c",
     "finalChain": [
       "v1:generation:首次生成",
-      "v2:generation:并发写入 1",
-      "v3:generation:并发写入 2",
-      "v4:generation:并发写入 3",
+      "v2:generation:并发写入 2",
+      "v3:generation:并发写入 1",
+      "v4:generation:并发写入 4",
       "v5:generation:并发写入 6",
-      "v6:generation:并发写入 4",
-      "v7:generation:并发写入 5",
+      "v6:generation:并发写入 5",
+      "v7:generation:并发写入 3",
       "v8:edit:中断写入"
     ]
   }

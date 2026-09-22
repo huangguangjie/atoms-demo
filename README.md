@@ -2,7 +2,7 @@
 
 一个还原 [Atoms](https://atoms.dev) 产品形态的智能体应用平台:用户在首页输入应用创意,智能体产出分步计划、流式生成代码,并在应用查看器中实时预览可运行的单文件 HTML 应用。全栈使用 Supabase(项目 pofchtyjqwevchiiqags):Auth 认证、Postgres/RLS 数据持久化、Edge Functions 承载 AI 生成与语音转写;未配置 Supabase 环境变量时自动降级为演示模式(浏览器内存数据)。
 
-## 功能全景(T1–T31)
+## 功能全景(T1–T32)
 
 ### 全局框架
 - 左右分栏布局:左侧边栏可折叠、可拖拽调宽(react-resizable-panels)
@@ -68,6 +68,31 @@
 ### 部署溯源
 - Vite 构建期注入 Git SHA / ref / 构建时间到 `window.__ATOMS_BUILD__`(由 `main.tsx` 挂载),线上可直接核对当前部署产物对应的提交。
 
+## T32 失败回退与幂等加固
+
+### 失败不生效(产物守卫)
+- 生成产物在**落库与展示之前**先经产物校验:空内容、明显截断(未以 `</html>` 收尾)、非法内联脚本语法一律判定为无效产物。
+- 无效产物**不进入 Preview、不写入源码查看器、不写入数据库**——不会留下半成品项目、空快照或错误版本号;对话区只保留失败卡与错误原因。
+
+### 事务回滚与展示顺序
+- 版本写入统一走原子 RPC `app_write_project_version`(迁移 009):取号、更新 `projects.app_html`、插入 `project_versions` 快照在同一事务内完成;任一步失败(含写入途中断连)整体回滚,项目内容与版本快照永远一致。
+- 前端把「成功落库」作为唯一成功判据:**RPC 成功返回后**才切换 Preview、源码与当前项目状态;失败时项目、快照、版本号三者均不变化。
+- 失败助手消息落库并标记 `failed` 状态,`metadata` 保存 `error`(错误原因)与 `prompt`(需求原文),刷新后仍可定位失败原因。
+
+### 幂等重试
+- `flowLockRef` 流级别互斥锁:同一轮生成在未结束前,重复点击「重新生成」不再发起第二次请求,避免重复消息、重复项目与重复版本号。
+- 重试只追加一轮新的助手消息,不重复落库用户消息;`appPersisted` 轮次守卫保证同一轮次的重复 `app` 事件只落库一次。
+- 队列续跑(生成中再次提交)沿用同一把锁与同一幂等落库路径,不会与进行中的轮次交叉写入。
+
+### 刷新恢复与瞬时鉴权自愈
+- 刷新后恢复:失败卡与失败原因、需求原文、重试入口,以及此前成功生成的版本列表与关联项目。
+- 公开表(模板、社区应用)读取遇到瞬时 401 时,自动刷新会话并有限重试;瞬时鉴权抖动不影响数据链路(走查中实测自愈且未影响完成轮次)。
+
+### 验收
+- `t32-failure-rollback-walkthrough.mjs` 35/35 PASS:覆盖无效产物拦截、事务失败回滚、成功后才切换 Preview、失败消息 metadata、刷新恢复、连点重试幂等、队列续跑、公开表瞬时 401 自愈。
+- 线上 RPC 核验(`app/backend/scripts/t32_rpc_probe.sql`):函数唯一无重载、签名与前端调用键一致、`authenticated` 具备 EXECUTE、半写项目 0、版本跳号 0、孤儿快照 0、空快照 0。
+- 评审账号 `t31.reviewer@atoms-demo.dev` 已按回收脚本彻底删除(级联清理资料/工作区/项目/版本),脚本可重复执行且幂等。
+
 ## 目录结构
 
 ```
@@ -82,7 +107,7 @@
 ├── app/
 │   ├── frontend/
 │   │   ├── src/              # 页面、组件、数据层、智能体运行器
-│   │   └── t*-*.mjs          # 浏览器回归走查脚本(T7/T8/T9/T10/T13/T22/T23/T25/T26/T27/T28/T29)
+│   │   └── t*-*.mjs          # 浏览器回归走查脚本(T7/T8/T9/T10/T13/T22/T23/T25/T26/T27/T28/T29/T31/T32)
 │   └── backend/
 │       ├── functions/        # Edge Functions(app_atoms_agent_generate、app_atoms_transcribe_audio)
 │       ├── migrations/       # SQL 迁移(建表/RLS/触发器/索引)
@@ -136,6 +161,7 @@ VITE_SUPABASE_ANON_KEY=<你的 Supabase anon key>
 | `t31-real-model-matrix.mjs` | 真实模型连续生成矩阵:计算器/贪吃蛇/待办清单 首轮 + 增量、SSE 事件完整性、版本链与产物校验 | 44/44 PASS |
 | `t31-sandbox-security.mjs` | Preview 沙箱:iframe sandbox/opaque origin、CSP、DOM/存储/Cookie 隔离、弹窗与导航守卫、宿主完整性 | 24/24 PASS |
 | `t31-auth-walkthrough.mjs` | 认证与状态恢复 A1–A21:注册/默认工作区/刷新恢复/退出清理/重登/清空存储/令牌刷新/无痕上下文 | 21/21 PASS |
+| `t32-failure-rollback-walkthrough.mjs` | 失败回退与幂等:无效/截断/语法错误产物不落库不入 Preview、RPC 失败整体回滚、成功后才切换展示、失败消息 metadata、刷新恢复失败卡与版本、连点重试幂等、队列续跑、公开表瞬时 401 自愈 | 35/35 PASS(约 34.3s) |
 
 后端验证脚本(`app/backend/scripts/`):`e2e_verify.py`(认证/资料/工作区/项目/RLS 隔离/越权拦截)、`test_agent_e2e.py`(登录态 AI SSE E2E)、`test_t9_baseline.py`(5 类生成质量门槛)、`test_transcribe.py`(语音转写)、`deploy_function.py`(Edge Function 部署)。
 

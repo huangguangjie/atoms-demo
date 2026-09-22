@@ -468,6 +468,8 @@ export default function ChatDetailPage() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queueRef = useRef<string[]>([]);
+  /** T32 重试幂等锁:同步标记「本轮生成进行中」,拦截连点造成的重复生成与重复写入 */
+  const flowLockRef = useRef(false);
   const runFlowRef = useRef<(text: string, opts?: { userInserted?: boolean; explicitDemo?: boolean }) => Promise<void>>(
     async () => undefined,
   );
@@ -529,6 +531,15 @@ export default function ChatDetailPage() {
           const missing = history.filter((m) => !seen.has(`${m.role}:${m.content}`));
           return [...missing, ...prev];
         });
+        // T32:失败态刷新恢复——仅当最后一条助手消息本身是失败时,才恢复失败卡与「重新生成」入口;
+        // 若其后已有成功轮次,则不残留过期失败态(失败原因与需求原文来自消息 metadata)
+        const lastAssistant = [...rows].reverse().find((m) => m.role === 'assistant');
+        if (lastAssistant?.metadata?.failed === true && lastAssistant.metadata.prompt) {
+          setFailedPrompt(lastAssistant.metadata.prompt);
+          setLastErrorMessage(
+            lastAssistant.metadata.error ?? '本次生成失败,当前版本保持上一次成功结果',
+          );
+        }
         setMessagesLoaded(true);
       })
       .catch((error) => {
@@ -636,14 +647,32 @@ export default function ChatDetailPage() {
   };
 
   /**
+   * T32:写入失败后与云端重新对齐——写入既可能整体回滚,也可能在客户端中断前已完整提交,
+   * 一律以库内为准重新读取项目与版本链,保证界面展示的「当前生效版本」与数据库一致。
+   */
+  const resyncProject = async () => {
+    if (!conversationId) return;
+    try {
+      const restored = await fetchConversationProject(conversationId, uid);
+      setProject(restored);
+      if (restored) setVersions(await fetchProjectVersions(restored.id));
+    } catch (error) {
+      console.error('[chat] 失败后重新对齐项目状态失败:', error);
+    }
+  };
+
+  /**
    * T25:生成完成后落库项目与版本——
    * 首次生成:创建项目(isDemo 透传)并写「首次生成」版本;
    * 增量修改:更新项目 app_html 并追加 generation 版本(标签=本次修改摘要)。
+   *
+   * T32 返回值语义:true=已成功写入(调用方据此才切换预览与源码),
+   * false=未写入(事务已回滚或补偿删除完成),本轮按失败处理,当前生效版本保持上一次成功结果。
    */
   const handleAppCreated = async (
     created: DemoApp,
     opts?: { incremental?: boolean; changeSummary?: string },
-  ) => {
+  ): Promise<boolean> => {
     const html = created.files[0].content;
     const meta = DEMO_KIND_META[created.kind];
     try {
@@ -656,7 +685,11 @@ export default function ChatDetailPage() {
           html,
           created.isDemo,
         );
-        if (nextNumber === null) return;
+        if (nextNumber === null) {
+          // T32:失败不生效——版本号未前进(取号在事务内,回滚即释放),并重新对齐库内状态
+          await resyncProject();
+          return false;
+        }
         setProject((prev) => (prev ? { ...prev, app_html: html } : prev));
         toast.success(`应用已更新,已记录版本 v${nextNumber}`);
       } else {
@@ -690,16 +723,26 @@ export default function ChatDetailPage() {
               console.error('[chat] 首次生成补偿删除失败:', error);
             });
             setProject(null);
+            setVersions([]);
             toast.error('项目与版本记录未能一致写入,已回滚本次项目创建,请重试');
-            return;
+            // T32:补偿删除后重新对齐,确保不残留半写项目
+            await resyncProject();
+            return false;
           }
           toast.success(`项目「${created.title}」已保存到我的项目`);
           window.dispatchEvent(new Event('atoms:projects-updated'));
+        } else {
+          // T32:项目未落库(createProject 返回空)同样视为本轮失败,不切换预览
+          await resyncProject();
+          return false;
         }
       }
       setViewingVersionId(null);
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '项目保存失败,请重试');
+      await resyncProject();
+      return false;
     }
   };
 
@@ -707,7 +750,12 @@ export default function ChatDetailPage() {
   const runFlow = async (text: string, opts?: { userInserted?: boolean; explicitDemo?: boolean }) => {
     const convId = conversationId;
     if (!convId || !text.trim() || generating) return;
+    // T32 重试幂等:生成态是异步 state,连点「重新生成」可能在同一次渲染内重复通过校验;
+    // 用同步锁保证同一时刻只有一轮生成在跑,重复点击不产生重复写入(项目/版本/消息)
+    if (flowLockRef.current) return;
+    flowLockRef.current = true;
     if (!demoMode && !user) {
+      flowLockRef.current = false;
       toast.error('登录状态已失效,请重新登录后再继续对话');
       return;
     }
@@ -743,6 +791,10 @@ export default function ChatDetailPage() {
     let planSteps: string[] = [];
     // T28 幂等守卫:同一轮生成只允许落库一次项目/版本,防止重复 app 事件造成重复项目
     let appPersisted = false;
+    // T32 失败不生效:产物必须「先落库成功、后切换预览与源码」;
+    // 落库失败时本轮按失败处理,当前生效版本保持上一次成功结果,不出现空/半截/失败内容
+    let persistTask: Promise<boolean> | null = null;
+    let persistFailure = '';
 
     try {
       // 主题真实生效:所选主题名传入生成链路;T15 未选择主题时传「默认」且不注入主题指令
@@ -757,14 +809,22 @@ export default function ChatDetailPage() {
         ...(previousHtml ? { previousHtml } : {}),
         onEvent: (event) => {
           if (event.type === 'app') {
-            setApp(event.app);
-            setCenterTab('overview');
             // T28 幂等:同一轮生成只落库一次,重复 app 事件(重试/服务端重复发送)不再重复建项目或版本
             if (appPersisted) return;
             appPersisted = true;
-            void handleAppCreated(event.app, {
+            const artifact = event.app;
+            // T32:不再立即 setApp——先落库,成功后才让产物生效(预览/源码同步切换)
+            persistTask = handleAppCreated(artifact, {
               incremental: Boolean(previousHtml),
               changeSummary: text,
+            }).then((ok) => {
+              if (ok) {
+                setApp(artifact);
+                setCenterTab('overview');
+              } else {
+                persistFailure = '本次修改未能写入云端(事务已回滚),当前版本保持上一次成功结果';
+              }
+              return ok;
             });
             return;
           }
@@ -820,8 +880,20 @@ export default function ChatDetailPage() {
         },
       });
     } finally {
-      setGenerating(false);
+      // T32:本轮收尾(落库结果、助手消息、队列续跑)全部完成前不置空闲。
+      // 失败卡与「重新生成」入口只在 !generating 时渲染,若提前置空闲就会出现
+      // 「界面已可点击、但流程锁尚未释放」的窗口,合法重试点击被静默吞掉(重试丢失)。
       abortRef.current = null;
+      // T32:等待落库结果——产物「先落库成功、后生效」,失败时本轮标记为失败,
+      // 预览/源码保持上一次成功版本(不出现空/半截/失败内容),并给出重试入口
+      if (persistTask) {
+        await persistTask.catch(() => false);
+      }
+      if (persistFailure) {
+        errorMessage = errorMessage || persistFailure;
+        setFailedPrompt(text);
+        setLastErrorMessage(friendlyErrorMessage(persistFailure));
+      }
       const parts = [firstMessage, finalMessage].filter(Boolean);
       // T20:计划步骤序列化落库——计划卡为实时结构化数据,历史回放以文本形式完整回显执行计划
       const planText = planSteps.length > 0
@@ -832,11 +904,17 @@ export default function ChatDetailPage() {
         ? `${parts.length > 0 ? `${parts.join('\n\n')}\n\n` : ''}生成出现问题:${errorMessage}`
         : parts.join('\n\n') || '生成已结束';
       const persisted = planText ? `${planText}\n\n${bodyText}` : bodyText;
+      // T32:本轮失败(生成错误或落库未生效)时记录失败元数据,
+      // 刷新回放后失败卡与「重新生成」入口按原样恢复,且不会误以为已生效
+      const roundFailed = Boolean(errorMessage);
       try {
         // T25:助手消息携带元数据(isDemo=演示产物;plan=执行计划),刷新回放恢复徽标与计划卡
         await insertMessage(convId, 'assistant', persisted, {
           ...(opts?.explicitDemo ? { isDemo: true } : {}),
           ...(planSteps.length > 0 ? { plan: planSteps } : {}),
+          ...(roundFailed
+            ? { failed: true, error: friendlyErrorMessage(errorMessage), prompt: text }
+            : {}),
         });
       } catch (error) {
         console.error('[chat] 助手消息写入失败:', error);
@@ -848,6 +926,10 @@ export default function ChatDetailPage() {
         setQueue(queueRef.current);
         setTimeout(() => void runFlowRef.current(next), 500);
       }
+      // T32:真正收尾后再开放下一轮——先置空闲(触发失败卡与按钮渲染),随即同步释放流程锁;
+      // 因锁释放是同步语句,按钮可见时锁必然已释放,合法重试不会被吞掉,连点仍由锁拦截
+      setGenerating(false);
+      flowLockRef.current = false;
     }
   };
 

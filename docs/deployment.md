@@ -76,6 +76,7 @@ server {
 | t31-real-model-matrix.mjs | 44/44 | 真实模型连续生成矩阵:计算器/贪吃蛇/待办清单三类应用首轮生成 + 增量修改,校验 SSE 事件完整性、版本链连续与产物内容 |
 | t31-sandbox-security.mjs | 24/24 | Preview 沙箱:iframe `sandbox` 白名单/opaque origin、CSP、宿主 DOM/`localStorage`/`sessionStorage`/Cookie 隔离、`window.open` 与顶层导航守卫、表单外发拦截、宿主完整性 |
 | t31-auth-walkthrough.mjs | 21/21 | 认证与状态恢复 A1–A21:登录入口/注册建默认工作区/会话持久化/刷新保持登录态与会话项目/退出清令牌/重登恢复/清空存储回落/refresh token 换新 access token 访问受保护资源/无痕上下文完整恢复 |
+| t32-failure-rollback-walkthrough.mjs | 35/35 | 失败回退与幂等专项(约 34.3s):无效/空/截断/内联脚本语法错误产物不落库且不入 Preview 与源码、版本写入 RPC 失败时项目/快照/版本号整体回滚、成功落库后才切换 Preview 与项目状态、失败助手消息 `failed` + `metadata(error, prompt)`、刷新恢复失败卡与需求原文与重试入口与历史版本、连点「重新生成」幂等(不重复消息/项目/版本)、队列续跑同锁、公开表瞬时 401 自动刷新会话并有限重试 |
 | test_agent_e2e.py(真实 AI) | 通过 | AI 余额恢复后登录态复测通过,SSE 事件齐全,HTML 约 6789 字符 |
 | t31_reviewer_account.py(评审账号) | 10/10 | 评审账号创建与隔离验收:注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人数据返回空集、公共表只读、无写策略写入被拒、可创建项目并经原子 RPC 写 v1 快照;结果落盘 `app/backend/reports/t31-reviewer-account.json` |
 
@@ -84,6 +85,13 @@ server {
 - Vite 构建期(`app/frontend/vite.config.ts`)读取当前 Git SHA / ref / 构建时间,经 `define` 注入;`src/main.tsx` 挂载为 `window.__ATOMS_BUILD__`,类型声明见 `src/vite-env.d.ts`。
 - 线上核对方式:在已发布站点控制台执行 `window.__ATOMS_BUILD__`,与本次推送的 `main` 提交 SHA 比对,即可确认部署产物对应提交。
 - 核验口径:注入值取自**当次构建所在的提交**,因此「部署产物注入的 SHA」应恒等于该次发布提交 SHA;本轮以发布提交为工作树重新构建,实测注入 SHA 与远端 `main` 提交一致(ref `main`),构建处理 1877 个模块并预渲染 `/` 与 `/blog/`。
+
+### 线上一致性与失败语义核验(T32)
+
+- 线上 RPC 核验(`app/backend/scripts/t32_rpc_probe.sql`):`app_write_project_version` 函数唯一无重载、`SECURITY INVOKER` + `SET search_path = public`、`authenticated` 具备 EXECUTE、参数签名含 `p_version_number integer DEFAULT NULL` 与 `p_is_demo boolean DEFAULT NULL`;数据一致性统计为半写项目 0、版本跳号项目 0、孤儿快照 0、空快照 0。
+- 结构探测与定位辅助脚本:`t32_columns_probe.sql`(核对真实列结构)、`t32_inconsistency_probe.sql`(定位项目与快照不一致来源,半写统计口径已按真实结构修正)。
+- 评审账号回收:`app/backend/reports/t32-reviewer-revoke-exec.sql` 按真实表结构级联删除 `t31.reviewer@atoms-demo.dev` 的资料、工作区、项目、版本与 `auth.users` 记录;二次执行结果为 `auth_users_deleted=0`、`remaining_users=0`,证明脚本幂等且线上无残留。
+- 前端失败语义(源码与 Preview 一致性的保证):产物在落库与展示前经产物守卫校验,无效产物不入 Preview/源码/数据库;版本写入以「RPC 成功返回」为唯一成功判据,成功后才切换 Preview 与源码;失败助手消息标记 `failed` 并携带 `metadata(error, prompt)`;`flowLockRef` 保证连点重试幂等,`appPersisted` 保证同轮次重复 `app` 事件只落库一次。
 
 ## 5. 发布后验证清单
 
@@ -100,3 +108,6 @@ server {
 - [ ] 登录后完整链路:创建对话 → 用户消息 → AI 生成 → 助手消息落库,刷新后侧边栏最近对话可回放
 - [ ] 云端模式下失败(断网/Edge Function 异常)显示真实错误提示,不静默回退演示内容
 - [ ] AI 网关故障(502)时失败卡展示指引文案,并提供「重新生成」与「使用演示模式生成」双入口;点击演示模式后消息带【演示模式】标识、查看器显示演示徽标、刷新后可回放
+- [ ] 生成失败时 Preview 与源码不被无效产物污染(项目、版本快照与版本号保持失败前状态),刷新后仍可看到失败卡、原始需求与「重新生成」入口
+- [ ] 生成中连点「重新生成」不产生重复消息、重复项目或重复版本号
+- [ ] 线上控制台执行 `window.__ATOMS_BUILD__`,注入 SHA 与本次发布提交一致

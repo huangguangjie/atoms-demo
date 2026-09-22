@@ -198,12 +198,16 @@ sequenceDiagram
 - 查看器「历史版本」面板:列表(时间/来源/字节数)、点击仅切换预览**不落库**、一键回滚带确认、Blob 导出 HTML。
 - 读取韧性:AbortController 真取消 + 单次 4s 超时 + 最多 3 次重试 + `versionsLoading` 加载态(修复挂起请求排队放大延迟)。
 
-### 9.1 原子版本写入(T31)
+### 9.1 原子版本写入与失败回退(T31/T32)
 
-- 迁移 `009_atomic_version_write.sql` 新增 RPC `app_write_project_version(p_project_id, p_app_html, p_source, p_label)`,把原本「读最新版本号 → 更新 `projects.app_html` → 插入 `project_versions`」三步收敛为**单个数据库事务**,消除项目已更新而快照缺失(半写状态)的窗口。
-- 取号与并发:`UNIQUE(project_id, version_number)` 为最终兜底;并发写入只有一个事务提交成功,失败方读取最新版本号后重试(有限次数),不会产生重复版本号,也不会写坏既有快照。
+- 迁移 `009_atomic_version_write.sql` 新增 RPC `app_write_project_version(p_project_id, p_source, p_label, p_app_html, p_version_number, p_is_demo)`,把原本「读最新版本号 → 更新 `projects.app_html` → 插入 `project_versions`」三步收敛为**单个数据库事务**,消除项目已更新而快照缺失(半写状态)的窗口。
+- 函数属性(线上实测):`SECURITY INVOKER` + `SET search_path = public`,`authenticated` 具备 EXECUTE;函数内自行校验 `auth.uid()`——未登录抛 `28000`、项目不存在抛 `P0002`、非属主抛 `42501`、非法 `source` 抛 `22023`。
+- 取号与并发:`p_version_number` 为空时由 `MAX(version_number) + 1` 在行锁(`SELECT ... FOR UPDATE`)保护下权威分配;`UNIQUE(project_id, version_number)` 为最终兜底;并发写入只有一个事务提交成功,失败方读取最新版本号后重试(有限次数),不会产生重复版本号,也不会写坏既有快照。
 - 事务边界内任一语句失败(含客户端在写入途中断开连接)整体回滚,项目 `app_html` 与版本快照保持一致;`source` 仍受 `generation|edit|rollback` CHECK 约束。
-- 验收:`t31-transaction-injection.mjs` 20/20——并发唯一、无半写状态、RLS 隔离(他人项目/版本不可写不可读)、中断注入后一致性;评审账号亦通过原子 RPC 写入 v1 快照(`t31_reviewer_account.py` 10/10)。
+- 前端失败语义(T32):产物在**落库与展示之前**先过产物守卫(空内容、未以 `</html>` 收尾的截断产物、内联脚本语法错误一律判无效);无效产物不进 Preview、不进源码查看器、不写数据库。版本写入以「RPC 成功返回」作为唯一成功判据,**成功后才切换** Preview、源码与当前项目状态;失败时项目、快照与版本号三者均不变。
+- 失败留痕:失败助手消息落库并标记 `failed`,`metadata` 记录 `error`(错误原因)与 `prompt`(需求原文);刷新后失败卡、需求原文、重试入口与此前成功版本均可恢复。
+- 幂等:`flowLockRef` 流级别互斥锁防止连点「重新生成」重复发起;重试只追加新的助手消息、不重复落库用户消息;`appPersisted` 轮次守卫保证同一轮次重复 `app` 事件只落库一次;队列续跑复用同一把锁与同一幂等路径。
+- 验收:`t31-transaction-injection.mjs` 20/20(并发唯一、无半写、RLS 隔离、中断注入后一致性);`t32-failure-rollback-walkthrough.mjs` 35/35(无效产物拦截、事务失败回滚、成功后才切换展示、失败 metadata、刷新恢复、连点重试幂等、队列续跑、公开表瞬时 401 自愈);线上核验 `app/backend/scripts/t32_rpc_probe.sql`(半写 0、版本跳号 0、孤儿快照 0、空快照 0);评审账号亦通过原子 RPC 写入 v1 快照(`t31_reviewer_account.py` 10/10,账号已于 T32 彻底回收)。
 
 ## 10. 刷新恢复机制
 
@@ -235,7 +239,7 @@ sequenceDiagram
 | 未配置兜底 | 演示模式(内存数据) | 仅限本地未配置环境变量;云端模式禁止静默回退 |
 | 产物形态 | 单文件 HTML + iframe srcDoc | 可落库/回放/克隆/导出;多文件工程化列 P3 |
 | 产物运行隔离 | iframe `sandbox` 白名单 + `srcdoc`(opaque origin)+ CSP(T31) | AI 产物不可触达宿主 DOM/存储/Cookie 与登录令牌 |
-| 版本写入 | 单事务 RPC `app_write_project_version`(T31) | 消除「项目已更新、快照缺失」半写状态;UNIQUE 兜底并发 |
+| 版本写入 | 单事务 RPC `app_write_project_version`(T31);失败整体回滚、成功后才切换展示(T32) | 消除「项目已更新、快照缺失」半写状态;UNIQUE 兜底并发;失败不污染项目与 Preview |
 | 生成模型 | deepseek-v4-flash 主 + 双备通道降级 | 复杂提示词 20–55s 稳定产出,满足平台时限;单点供应商故障不再直接失败 |
 | 终止判据 | `app` 事件交付即收敛(T28) | 流截断≠生成失败;重跑代价远大于补发 done |
 | 增量协议 | `previousHtml` 透传完整 HTML | 复用单文件模型,避免重生成丢失既有功能 |

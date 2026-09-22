@@ -8,6 +8,7 @@
  */
 
 import { buildDemoApp, type DemoApp } from '@/lib/demo-apps';
+import { validateArtifact } from '@/lib/artifact-guard';
 import { getSupabaseFunctionUrl, supabase } from '@/lib/supabase';
 
 export type AgentMode = 'build' | 'goal';
@@ -43,6 +44,24 @@ export interface RunAgentOptions {
 const AGENT_FUNCTION_NAME = 'app_atoms_agent_generate';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * T32 产物守卫:把校验不通过的 `app` 事件改写为 `error` 事件。
+ *
+ * 这样上层看到的就是「本轮失败」:产物不落库、不切换预览与源码,当前生效版本保持上一次成功结果;
+ * 同时 `deliveredApp` / `sawApp` 终止守卫也不会把无效产物当作已交付,收尾判定与失败语义保持一致。
+ */
+function guardArtifactEvent(event: AgentEvent): AgentEvent {
+  if (event.type !== 'app') return event;
+  const html = event.app?.files?.[0]?.content ?? '';
+  const verdict = validateArtifact(html);
+  if (verdict.ok) return event;
+  console.warn('[agent] 产物校验未通过,按本轮失败处理:', verdict.reason);
+  return {
+    type: 'error',
+    message: `本次生成未产出可用应用(${verdict.reason}),已放弃写入,当前版本保持上一次成功结果`,
+  };
+}
 
 function planLabels(title: string): string[] {
   return [
@@ -110,7 +129,7 @@ async function runDemoAgent(options: RunAgentOptions): Promise<void> {
     return;
   }
 
-  onEvent({ type: 'app', app });
+  onEvent(guardArtifactEvent({ type: 'app', app }));
   onEvent({
     type: 'message',
     content: `${demoPrefix}「${app.title}」已经生成完成(本地演示应用)!右侧预览可以直接体验;AI 服务恢复后可点击「重新生成」重新尝试真实生成。`,
@@ -179,7 +198,8 @@ async function runEdgeAgent(options: RunAgentOptions): Promise<void> {
         const payload = trimmed.slice(5).trim();
         if (!payload || payload === '[DONE]') continue;
         try {
-          const event = JSON.parse(payload) as AgentEvent;
+          // T32:产物先过可用性校验,无效产物以 error 事件透出(不计入已交付产物)
+          const event = guardArtifactEvent(JSON.parse(payload) as AgentEvent);
           if (event.type === 'done') sawDone = true;
           if (event.type === 'app') sawApp = true;
           options.onEvent(event);

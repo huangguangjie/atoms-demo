@@ -1,0 +1,200 @@
+{
+  "steps": [
+    {
+      "name": "注册新账号",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "登录注入并进入首页",
+      "ok": true,
+      "detail": "t32-1790001483013 的 Atoms"
+    },
+    {
+      "name": "首轮成功生成并落库项目",
+      "ok": true,
+      "detail": "app_html 174 字符"
+    },
+    {
+      "name": "首轮写入 v1 且版本链连续",
+      "ok": true,
+      "detail": "版本链 1"
+    },
+    {
+      "name": "首轮内容与最新快照一致(无半写)",
+      "ok": true,
+      "detail": "一致=true 含 R1=true"
+    },
+    {
+      "name": "空产物:失败卡出现(守卫拦截,不进入成功路径)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "空产物:Preview 与源码仍为上一次成功版本",
+      "ok": true,
+      "detail": "srcdoc 含R1=true 源码含R1=true"
+    },
+    {
+      "name": "空产物:项目内容未被改写、未新增版本、无孤儿快照",
+      "ok": true,
+      "detail": "版本链 1 一致=true"
+    },
+    {
+      "name": "刷新恢复:失败卡与需求原文按消息 metadata 恢复",
+      "ok": true,
+      "detail": "失败卡=true 需求原文=true"
+    },
+    {
+      "name": "刷新恢复:保留「重新生成」入口",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "刷新恢复:关联项目与当前成功版本(v1)恢复到预览",
+      "ok": true,
+      "detail": "srcdoc 2504 字符"
+    },
+    {
+      "name": "截断产物:失败卡出现",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截断产物:Preview 与源码保持上一次成功版本",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截断产物:未写入、未占版本号",
+      "ok": true,
+      "detail": "版本链 1"
+    },
+    {
+      "name": "语法错误产物:失败卡出现",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语法错误产物:Preview 与源码保持上一次成功版本",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语法错误产物:未写入、未占版本号",
+      "ok": true,
+      "detail": "版本链 1"
+    },
+    {
+      "name": "版本写入失败:失败卡出现(事务已回滚)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "版本写入失败:失败卡明确「事务已回滚,保持上一次成功结果」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "版本写入失败:Preview 与源码未出现失败产物 R3",
+      "ok": true,
+      "detail": "srcdoc 含R3=false 源码含R3=false"
+    },
+    {
+      "name": "版本写入失败:项目内容与版本链均未前进(失败不占号、无孤儿快照)",
+      "ok": true,
+      "detail": "版本链 1 一致=true 项目含R3=false"
+    },
+    {
+      "name": "重试幂等:连点「重新生成」只产生 1 次上游调用",
+      "ok": true,
+      "detail": "上游调用 1 次"
+    },
+    {
+      "name": "重试幂等:只写入 1 个新版本(无重复版本号)",
+      "ok": true,
+      "detail": "版本链 1,2"
+    },
+    {
+      "name": "成功轮写入 v2 且版本号连续(v1→v2,失败轮未占号)",
+      "ok": true,
+      "detail": "版本链 1,2"
+    },
+    {
+      "name": "v2 来源与标签正确(增量修改)",
+      "ok": true,
+      "detail": "v2:generation:增量修改:做一个番茄钟计时器,25 分钟专注 + 5 分钟休息,显示倒计时与开始暂停按钮,"
+    },
+    {
+      "name": "最新快照内容 == projects.app_html(T31 原子写入保持)",
+      "ok": true,
+      "detail": "一致=true"
+    },
+    {
+      "name": "历史保留:v1 快照内容原样未变",
+      "ok": true,
+      "detail": "v1 174 字符 含R1=true"
+    },
+    {
+      "name": "源码与 Preview 均为当前生效版本 v2",
+      "ok": true,
+      "detail": "srcdoc 含R4=true 源码含R4=true"
+    },
+    {
+      "name": "Preview srcdoc 与数据库 app_html 同源一致",
+      "ok": true,
+      "detail": "h1=T32R4MARK"
+    },
+    {
+      "name": "刷新恢复:成功轮之后不残留过期失败卡",
+      "ok": true,
+      "detail": "失败卡可见=false"
+    },
+    {
+      "name": "刷新恢复:当前成功版本 v2 恢复到预览",
+      "ok": true,
+      "detail": "srcdoc 2504 字符"
+    },
+    {
+      "name": "刷新恢复:版本链 v1/v2 完整恢复",
+      "ok": true,
+      "detail": "历史版本 v2 生成 增量修改:做一个番茄钟计时器,25 分钟专注 + 5 分钟休息,显示倒计时与开始暂停按钮, 9/21/2026, 7:38:30 AM · 0.2 KB v1 生成 首次生成 9/21/2026, 7:38:09 AM"
+    },
+    {
+      "name": "刷新后库内仍自洽(项目内容 == 最新快照)",
+      "ok": true,
+      "detail": "版本链 1,2 一致=true"
+    },
+    {
+      "name": "公开表读取的瞬时鉴权已自愈(401 后同路径重试成功)",
+      "ok": true,
+      "detail": "本轮未出现瞬时 401(公开读一次成功)"
+    },
+    {
+      "name": "无未预期控制台错误",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": [],
+  "expectedErrors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ https://pofchtyjqwevchiiqags.supabase.co/rest/v1/rpc/app_write_project_version",
+    "[chat] 版本写入失败: Error: 版本写入失败(事务已回滚,项目内容保持原样):T32 注入:版本写入失败(事务已回滚)\n    at writeProjectVersion (http://localhost:3000/src/ @ http://localhost:3000/src/pages/ChatDetailPage.tsx?t=1790001242763"
+  ],
+  "evidence": {
+    "projectId": "8a0b3dec-3e23-411e-a117-98d1d47305cd",
+    "conversationId": "927f8664-7723-486e-b950-e2bc46960a19",
+    "upstreamCalls": 6,
+    "finalChain": [
+      "v1:generation:首次生成",
+      "v2:generation:增量修改:做一个番茄钟计时器,25 分钟专注 + 5 分钟休息,显示倒计时与开始暂停按钮,"
+    ],
+    "failureRounds": 4,
+    "artifactLengths": {
+      "success": 174,
+      "latest": 174
+    },
+    "totalSeconds": 34.3
+  },
+  "selfHealedPublicReads": []
+}
