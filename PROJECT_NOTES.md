@@ -103,7 +103,7 @@ SSE 事件协议:`message / plan / step-* / code-delta / app / done / error`;130
 | 线上一致性与账号回收(T32) | 线上 RPC 签名/权限/安全属性核验(函数唯一无重载、`authenticated` 具备 EXECUTE)、半写/跳号/孤儿/空快照统计为 0;评审账号彻底删除并验证脚本幂等 | ✅ 完成(`t32_rpc_probe.sql`:半写 0、版本跳号 0、孤儿快照 0、空快照 0;`t32-reviewer-revoke-exec.sql` 二次执行 `auth_users_deleted=0`、`remaining_users=0`) |
 | 双账号隔离与全新会话恢复(T35/T36) | 全新无痕上下文未登录起步 → 登录账号 A 恢复工作区/会话/消息/项目/版本 → 刷新恢复收藏会话 → 退出后新上下文无令牌无残留 → 账号 B 前端不可见他人数据、REST/RLS 空集、越权写入影响 0 行、越权原子 RPC 被拒 → 临时账号与走查数据回收 | ✅ 完成(25/25 PASS;按线上真实列结构构造数据,`messages` 无 `user_id`) |
 | 生成稳定性与降级顺序(T35/T36) | 首字节停滞 45s 切换备用通道 + `stallSwitches` 诊断;复杂/简单需求现场取证模型链、尝试次数、降级标记与耗时 | ✅ 完成(12/12 PASS:复杂需求 `deepseek-v4-flash` 首字节停滞 → `gpt-5.4` 交付,122.2s / 7755 字符;简单需求单次命中,31.6s / 6469 字符) |
-| 部署溯源 SHA 三方对照(T36) | 远端 `main` SHA ↔ 本地同提交构建注入 SHA ↔ 已发布站点 `window.__ATOMS_BUILD__` | ✅ 机制已验证(受控实验按 `dd347f9`/`ac5c3bd` 构建分别注入对应 SHA);线上值需在 App Viewer 重新 Publish 后读取核对 |
+| 部署溯源 SHA 三方对照(T36) | 远端 `main` SHA ↔ 本地同提交构建注入 SHA ↔ 已发布站点 `window.__ATOMS_BUILD__` | ✅ 机制已验证(受控实验按 `dd347f9`/`ac5c3bd` 构建分别注入对应 SHA);根因已定位:平台构建读工作区只读历史 HEAD,与 GitHub `main` 非同一提交时必然不等,叠加未重新 Publish;`main` 已推进至 `a547bd0`,线上值在 App Viewer 重新 Publish 后核对 |
 | 语音转写(T5) | scribe_v2 录音转写、原生识别回退 | ✅ 完成(E2E 通过) |
 | 模板占位(T5) | 占位填写弹窗、内容替换、落库回放 | ✅ 完成 |
 | 资源/项目页(T3) | 发现/模板过滤、体验/克隆/魔改、收藏 | ✅ 完成 |

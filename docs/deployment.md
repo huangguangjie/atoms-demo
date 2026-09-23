@@ -92,12 +92,28 @@ server {
 - 三方口径:①远端 `main` 提交 SHA;②本地按同一提交重新构建后产物内注入的 SHA;③已发布站点控制台 `window.__ATOMS_BUILD__`。
 - 受控实验(2026-09-22):以远端基线 `dd347f996784ae361c03eeaa821500d0c210c64a` 为工作树构建,产物注入 SHA 实测为 `dd347f996784ae361c03eeaa821500d0c210c64a`;以当前 HEAD `ac5c3bdb87007d9d501353209eb1a719e7f85d18` 构建,产物注入 SHA 实测为 `ac5c3bdb87007d9d501353209eb1a719e7f85d18`。两次注入值与各自提交一一对应,证明注入机制正确,不存在错位、缓存或随机值。
 - 漂移根因(排除法结论):
-  1. **未重新 Publish(主因)**:平台已发布站点是发布当时的构建快照,后续本地提交不会自动同步;`dd347f9` 之后的新提交只存在于仓库与本地构建,因此线上值落后于 `main`。
+  1. **未重新 Publish(直接原因)**:平台已发布站点是发布当时的构建快照,后续提交不会自动同步;`dd347f9` 之后的新提交只存在于仓库与本地构建,因此线上值落后于 `main`。
   2. **不是 CI 未注入 SHA**:CI 未提供 `GITHUB_SHA` 时 `vite.config.ts` 回退读取 `git rev-parse HEAD`,受控实验已证明两条路径都能得到正确值。
   3. **不是发布后新增提交导致的错位**:注入值严格等于构建时所在提交,不存在「旧 SHA 打新包」。
-- 闭环要求:在 App Viewer 点击 **Publish** 重新发布后读取 `window.__ATOMS_BUILD__`,期望与本次推送后的 `main` 提交 SHA 完全一致。
-- 平台域名实测:环境变量 `PUBLIC_BASE_URL` 为平台站点(`https://atoms.dev`,HTTP 200);`PREVIEW_BASE_URL` / `DEV_BASE_URL` 指向开发预览服务(`...-preview.app.atoms.dev` 返回开发服务器页面,不是发布产物),因此线上 SHA 只能从 App Viewer 发布后的站点读取。
+  4. **结构性原因(本轮定位)**:平台构建读取的是**工作区仓库**的 HEAD(工作区 `.git` 为平台只读挂载 `/run/gitdata/workspace`,`ro` 文件系统,无法改写引用或配置),而 GitHub `huangguangjie/atoms-demo` 是另一条独立提交历史。因此只要「工作区 HEAD」与「GitHub `main`」不是同一提交,平台注入 SHA 就必然与 `main` 不相等;这与发布动作无关,属于两条历史的对应关系问题。
+- 闭环要求与口径:
+  - GitHub 侧:推送后的 `main` 提交 SHA 作为唯一仓库基准。
+  - 本地侧:以同一提交为工作树重新构建,产物注入 SHA 应严格等于该提交(受控实验已证实)。
+  - 线上侧:在 App Viewer 点击 **Publish** 后,于站点控制台执行 `window.__ATOMS_BUILD__` 读取实际注入 SHA,并与上述基准比对。
+- 平台域名实测:环境变量 `PUBLIC_BASE_URL` 为平台站点(`https://atoms.dev`,HTTP 200);`PREVIEW_BASE_URL` / `DEV_BASE_URL` 指向开发预览服务(`https://tgnxvd-...-preview.app.atoms.dev` 返回 HTTP 200 但为**开发服务器页面**,响应中无构建产物 `assets/*.js`),因此线上 SHA 只能从 App Viewer 发布后的站点读取,不能用预览地址替代。
 - 本轮构建:预渲染 `/` 与 `/blog/` 两页,构建耗时约 9 秒。
+
+### GitHub `main` 推送核验(T36)
+
+- 推送结果:`dd347f9` → **`a547bd0`**(`main -> main`),提交信息「T36: SHA 漂移归因闭环 + 双账号隔离 25/25 + 真实模型稳定性 12/12 + 文档同步」。
+- 推送后核验(全部实测):
+  - 远端 `refs/heads/main` SHA = `a547bd018e2b23d658b1cb06a1278a73b363e158`,与本地发布克隆 HEAD 完全一致;
+  - 发布克隆工作树干净(`git status --porcelain` 输出 0 行);
+  - 远端树纳入文件 509 个,其中 Git LFS 跟踪 15 个(`favicon.svg`、`voice-test.mp3` 等保持 LFS 指针,未退化为普通文件);
+  - 敏感/临时文件纳入数 **0**(无 `.env`、凭据、`node_modules`、`dist`、`__pycache__`、`.tmp-*`);
+  - 新增证据文件均已入库:`t34_reviewer_account.py`、`t35_generation_stability.py`、`t35-dual-account-isolation.mjs` 及其结果 JSON、`t35-generation-stability.json`;
+  - 平台系统文件 `app/frontend/.mgx/config.yaml` 未被修改。
+- 本轮纳入变更:15 个文件(7 个修改 + 8 个新增),其中 `README.md`/`PROJECT_NOTES.md`/`docs/deployment.md` 三份文档已按 T36 结论同步。
 
 ### 线上一致性与失败语义核验(T32)
 

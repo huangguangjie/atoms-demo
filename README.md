@@ -171,7 +171,8 @@ VITE_SUPABASE_ANON_KEY=<你的 Supabase anon key>
 详见 [docs/deployment.md](docs/deployment.md)。要点:
 
 - 平台发布:在 App Viewer 点击 Publish 获得发布链接;已发布站点是发布当时的构建快照,**修改代码后需重新 Publish 才会更新**。
-- 部署溯源:`window.__ATOMS_BUILD__` 注入本次构建提交的 SHA/ref/时间。三方对照口径为「远端 `main` SHA = 本地同提交构建注入 SHA = 已发布站点实测 SHA」;受控实验已证实注入值严格等于构建时所在提交(按 `dd347f9` 构建注入 `dd347f9`、按 `ac5c3bd` 构建注入 `ac5c3bd`),因此线上值与 `main` 不一致时,唯一主因是发布后未重新 Publish。
+- 部署溯源:`window.__ATOMS_BUILD__` 注入本次构建提交的 SHA/ref/时间。三方对照口径为「远端 `main` SHA = 本地同提交构建注入 SHA = 已发布站点实测 SHA」;受控实验已证实注入值严格等于构建时所在提交(按 `dd347f9` 构建注入 `dd347f9`、按 `ac5c3bd` 构建注入 `ac5c3bd`)。
+- SHA 漂移归因(T36):平台构建读取**工作区仓库** HEAD(工作区 `.git` 为只读挂载,不可改写),GitHub `main` 是另一条历史;两者不是同一提交时注入 SHA 必然与 `main` 不等,这与发布动作无关。发布后未重新 Publish 则会让线上值进一步滞后。当前 GitHub `main` 已推进至 `a547bd0`(509 文件、LFS 15 个、敏感文件 0)。
 - 静态托管:`pnpm run build` 后部署 `app/frontend/dist/`(任意静态托管平台均可)。
 - 后端:Supabase 项目 pofchtyjqwevchiiqags 已连接;Edge Functions 已部署,AI 密钥仅存 Supabase Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有密钥。
 
