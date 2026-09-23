@@ -162,6 +162,7 @@ VITE_SUPABASE_ANON_KEY=<你的 Supabase anon key>
 | `t31-sandbox-security.mjs` | Preview 沙箱:iframe sandbox/opaque origin、CSP、DOM/存储/Cookie 隔离、弹窗与导航守卫、宿主完整性 | 24/24 PASS |
 | `t31-auth-walkthrough.mjs` | 认证与状态恢复 A1–A21:注册/默认工作区/刷新恢复/退出清理/重登/清空存储/令牌刷新/无痕上下文 | 21/21 PASS |
 | `t32-failure-rollback-walkthrough.mjs` | 失败回退与幂等:无效/截断/语法错误产物不落库不入 Preview、RPC 失败整体回滚、成功后才切换展示、失败消息 metadata、刷新恢复失败卡与版本、连点重试幂等、队列续跑、公开表瞬时 401 自愈 | 35/35 PASS(约 34.3s) |
+| `t35-dual-account-isolation.mjs` | 双账号隔离与全新会话恢复:无痕未登录 → 账号 A 数据完整恢复 → 刷新恢复 → 退出无残留 → 账号 B 前端不可见 + REST/RLS 空集 + 越权写入被拒 + 临时数据回收 | 25/25 PASS |
 
 后端验证脚本(`app/backend/scripts/`):`e2e_verify.py`(认证/资料/工作区/项目/RLS 隔离/越权拦截)、`test_agent_e2e.py`(登录态 AI SSE E2E)、`test_t9_baseline.py`(5 类生成质量门槛)、`test_transcribe.py`(语音转写)、`deploy_function.py`(Edge Function 部署)。
 
@@ -169,7 +170,8 @@ VITE_SUPABASE_ANON_KEY=<你的 Supabase anon key>
 
 详见 [docs/deployment.md](docs/deployment.md)。要点:
 
-- 平台发布:在 App Viewer 点击 Publish 获得发布链接。
+- 平台发布:在 App Viewer 点击 Publish 获得发布链接;已发布站点是发布当时的构建快照,**修改代码后需重新 Publish 才会更新**。
+- 部署溯源:`window.__ATOMS_BUILD__` 注入本次构建提交的 SHA/ref/时间。三方对照口径为「远端 `main` SHA = 本地同提交构建注入 SHA = 已发布站点实测 SHA」;受控实验已证实注入值严格等于构建时所在提交(按 `dd347f9` 构建注入 `dd347f9`、按 `ac5c3bd` 构建注入 `ac5c3bd`),因此线上值与 `main` 不一致时,唯一主因是发布后未重新 Publish。
 - 静态托管:`pnpm run build` 后部署 `app/frontend/dist/`(任意静态托管平台均可)。
 - 后端:Supabase 项目 pofchtyjqwevchiiqags 已连接;Edge Functions 已部署,AI 密钥仅存 Supabase Secrets(`APP_AI_KEY`/`APP_AI_BASE_URL`),前端不持有密钥。
 

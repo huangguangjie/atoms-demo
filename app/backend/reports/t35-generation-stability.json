@@ -1,0 +1,224 @@
+{
+  "steps": [
+    {
+      "name": "登录态就绪(用于真实链路取证)",
+      "ok": true,
+      "detail": "reviewer:t34.reviewer@atoms-demo.dev | user=1553d823-02af-41a4-bc68-4082ba41f696"
+    },
+    {
+      "name": "complex: 收到 diagnostics 现场证据事件",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "complex: 模型链与声明一致(deepseek-v4-flash>gpt-5.4>gemini-3.1-pro-preview)",
+      "ok": true,
+      "detail": "实测 deepseek-v4-flash>gpt-5.4>gemini-3.1-pro-preview"
+    },
+    {
+      "name": "complex: 最终生效模型属于模型链且尝试留痕完整",
+      "ok": true,
+      "detail": "activeModel=gpt-5.4 attempts=3 degraded=True"
+    },
+    {
+      "name": "complex: 请求耗时在 130s 软超时预算内",
+      "ok": true,
+      "detail": "122214ms"
+    },
+    {
+      "name": "complex: 交付完整 HTML 产物(以 </html> 收尾)",
+      "ok": true,
+      "detail": "length=7755 errors=[]"
+    },
+    {
+      "name": "simple: 收到 diagnostics 现场证据事件",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "simple: 模型链与声明一致(deepseek-v4-flash>gpt-5.4>gemini-3.1-pro-preview)",
+      "ok": true,
+      "detail": "实测 deepseek-v4-flash>gpt-5.4>gemini-3.1-pro-preview"
+    },
+    {
+      "name": "simple: 最终生效模型属于模型链且尝试留痕完整",
+      "ok": true,
+      "detail": "activeModel=deepseek-v4-flash attempts=1 degraded=False"
+    },
+    {
+      "name": "simple: 请求耗时在 130s 软超时预算内",
+      "ok": true,
+      "detail": "31567ms"
+    },
+    {
+      "name": "simple: 交付完整 HTML 产物(以 </html> 收尾)",
+      "ok": true,
+      "detail": "length=6469 errors=[]"
+    },
+    {
+      "name": "复杂需求未耗尽 130s 预算(复杂/简化耗时差异已收敛)",
+      "ok": true,
+      "detail": "complex=122214ms simple=31567ms"
+    }
+  ],
+  "requests": {
+    "complex": {
+      "prompt": "做一个功能完整的计算器应用,包含标准计算、科学计算(三角函数/对数/幂运算)、历史记录三个分区,支持键盘输入与鼠标点击,浅色主题,中文界面。",
+      "rootCause": "first-byte-stall-switched-to-backup-model",
+      "stallSwitchMs": 45000,
+      "stallSwitches": [
+        {
+          "from": "deepseek-v4-flash",
+          "to": "gpt-5.4",
+          "atMs": 56379
+        }
+      ],
+      "elapsedMs": 122214,
+      "budgetMs": 130000,
+      "proactiveCutMs": 35000,
+      "finishReason": "stop",
+      "timedOut": false,
+      "proactiveCut": true,
+      "retried": true,
+      "truncatedAtLength": 11599,
+      "firstTokenMs": 57412,
+      "outputLength": 7755,
+      "usage": {
+        "completion_tokens": 2471,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "prompt_tokens": 962,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 3433
+      },
+      "budgetLines": 250,
+      "planSource": "llm",
+      "planMs": 8733,
+      "syntaxFixed": false,
+      "attempts": 3,
+      "modelChain": [
+        "deepseek-v4-flash",
+        "gpt-5.4",
+        "gemini-3.1-pro-preview"
+      ],
+      "modelTrace": [
+        {
+          "model": "deepseek-v4-flash",
+          "outcome": "selected",
+          "status": "200",
+          "elapsedMs": 1537,
+          "degraded": false
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "outcome": "stalled-first-byte",
+          "status": "200-no-output",
+          "elapsedMs": 45002,
+          "degraded": true
+        },
+        {
+          "model": "gpt-5.4",
+          "outcome": "selected-after-stall",
+          "status": "200",
+          "elapsedMs": 0,
+          "degraded": true
+        }
+      ],
+      "activeModel": "gpt-5.4",
+      "degraded": true,
+      "htmlLength": 7755,
+      "htmlComplete": true,
+      "errors": [],
+      "responseHeaders": {
+        "x-atoms-active-model": "deepseek-v4-flash",
+        "x-atoms-model-chain": "deepseek-v4-flash,gpt-5.4,gemini-3.1-pro-preview"
+      }
+    },
+    "simple": {
+      "prompt": "做一个计数器应用,点击按钮加一,支持重置,浅色主题,中文界面。",
+      "rootCause": "completed-within-budget",
+      "stallSwitchMs": 45000,
+      "stallSwitches": [],
+      "elapsedMs": 31567,
+      "budgetMs": 130000,
+      "proactiveCutMs": 35000,
+      "finishReason": "stop",
+      "timedOut": false,
+      "proactiveCut": false,
+      "retried": false,
+      "truncatedAtLength": 0,
+      "firstTokenMs": 20689,
+      "outputLength": 6469,
+      "usage": {
+        "completion_tokens": 3767,
+        "prompt_tokens": 779,
+        "total_tokens": 4546,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1588
+        }
+      },
+      "budgetLines": 250,
+      "planSource": "llm",
+      "planMs": 8037,
+      "syntaxFixed": false,
+      "attempts": 1,
+      "modelChain": [
+        "deepseek-v4-flash",
+        "gpt-5.4",
+        "gemini-3.1-pro-preview"
+      ],
+      "modelTrace": [
+        {
+          "model": "deepseek-v4-flash",
+          "outcome": "selected",
+          "status": "200",
+          "elapsedMs": 1112,
+          "degraded": false
+        }
+      ],
+      "activeModel": "deepseek-v4-flash",
+      "degraded": false,
+      "htmlLength": 6469,
+      "htmlComplete": true,
+      "errors": [],
+      "responseHeaders": {
+        "x-atoms-active-model": "deepseek-v4-flash",
+        "x-atoms-model-chain": "deepseek-v4-flash,gpt-5.4,gemini-3.1-pro-preview"
+      }
+    }
+  },
+  "modelChainExpected": [
+    "deepseek-v4-flash",
+    "gpt-5.4",
+    "gemini-3.1-pro-preview"
+  ],
+  "rootCauseAnalysis": {
+    "complex": {
+      "rootCause": "first-byte-stall-switched-to-backup-model",
+      "budgetLines": 250,
+      "finishReason": "stop",
+      "proactiveCut": true,
+      "elapsedMs": 122214
+    },
+    "simple": {
+      "rootCause": "completed-within-budget",
+      "budgetLines": 250,
+      "finishReason": "stop",
+      "proactiveCut": false,
+      "elapsedMs": 31567
+    },
+    "conclusion": "现场证据显示复杂需求的首个通道 deepseek-v4-flash 在 56379ms 内未吐出任何首字节(上游 HTTP 200 但停在推理阶段),因此在 45000ms 停滞阈值处切换备用通道 gpt-5.4 继续生成,最终以 gpt-5.4 在 122214ms 完整交付;简化需求首字节 20689ms 到达、31567ms 一次完成。差异根因是上游通道首字节停滞(推理阶段耗时),不是提示词复杂度或预算分配错误。"
+  },
+  "passed": 12,
+  "total": 12
+}

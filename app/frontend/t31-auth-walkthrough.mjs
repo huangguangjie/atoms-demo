@@ -7,9 +7,17 @@ import fs from 'node:fs';
 
 const APP = 'http://localhost:3000';
 const TS = Date.now();
-const EMAIL = `t31-auth-${TS}@atoms.test`;
-const PASSWORD = 'AtomsDemo2026!';
-const SPACE_NAME = `t31-auth-${TS} 的 Atoms`;
+// 支持两种模式:
+//   默认      —— 走查自行注册临时账号(原 T31 口径)
+//   环境变量  —— REVIEWER_EMAIL / REVIEWER_PASSWORD 指定已存在账号(T34 reviewer 复验口径)
+const REUSE_EMAIL = process.env.REVIEWER_EMAIL || '';
+const REUSE_PASSWORD = process.env.REVIEWER_PASSWORD || '';
+const REUSE = Boolean(REUSE_EMAIL && REUSE_PASSWORD);
+const EMAIL = REUSE ? REUSE_EMAIL : `t31-auth-${TS}@atoms.test`;
+const PASSWORD = REUSE ? REUSE_PASSWORD : 'AtomsDemo2026!';
+const SPACE_NAME = REUSE
+  ? (process.env.REVIEWER_SPACE_NAME || 'T34 验收评审 的 Atoms')
+  : `t31-auth-${TS} 的 Atoms`;
 const CONV_TITLE = `T31 认证恢复会话 ${TS}`;
 const PROJECT_NAME = `T31 认证恢复项目 ${TS}`;
 
@@ -135,9 +143,12 @@ try {
   // 1) 首次访问未登录:点击头像弹出登录弹窗
   log('A1 未登录访问时提供登录入口(头像 → 登录 Atoms 弹窗)', await isSignedOut(page));
 
-  // 2) 注册
-  await submitAuth(page, 'signup', EMAIL, PASSWORD);
-  log('A2 注册成功并进入登录态(默认工作区自动创建)', await waitSignedIn(page), SPACE_NAME);
+  // 2) 注册(复用模式下改为直接登录已存在的 reviewer 账号)
+  await submitAuth(page, REUSE ? 'signin' : 'signup', EMAIL, PASSWORD);
+  log(REUSE
+    ? 'A2 reviewer 账号登录成功并进入登录态(默认工作区已就绪)'
+    : 'A2 注册成功并进入登录态(默认工作区自动创建)',
+  await waitSignedIn(page), `${EMAIL} | ${SPACE_NAME}`);
 
   // 3) 令牌与数据准备(REST,构造可恢复的云端数据)
   const session = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY));

@@ -19,6 +19,11 @@ const MAX_TOKENS = 16000;
 // 平台约 150s 强制回收:规划调用(≤15s)+ 连接余量与代码生成共享该预算,到点主动收尾
 const SOFT_DEADLINE_MS = 130_000;
 const PLAN_DEADLINE_MS = 15_000; // 规划调用独立预算,超时即回退启发式计划
+// T35:复杂需求在软超时前提前收敛,把剩余预算让给「精简重试」,避免被平台回收后整轮失败
+const PROACTIVE_CUT_MS = 35_000;
+// T35:首字节停滞切换阈值——上游返回 200 却迟迟不吐首字节(长时间停在推理阶段)时,
+// 与其把 130s 预算耗在单一通道上,不如在预算内切换到下一个模型通道继续生成。
+const STALL_SWITCH_MS = 45_000;
 const ESTIMATE_TOTAL = 8000; // code-delta 进度百分比估算基准
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -170,12 +175,20 @@ const CODE_SYSTEM = [
   '【工程要求】内联全部 CSS 与 JS,无外部依赖;交互真实可用,不使用 alert/confirm 阻塞弹窗。',
   '【JS 语法硬约束】每个 const/let 声明必须紧跟 = 初始化器;禁止孤立变量名与残留逗号(错误示例:const a=1,b,fn=>fn(),必须写成 const b=默认值)。',
   '箭头函数、对象字面量、括号与引号必须成对闭合;输出前逐行自检内联脚本可被浏览器直接解析执行,任何一处语法错误都视为无效产物。',
-  '总代码量必须控制在 250 行以内(约 8KB):注释与空行最少化,样式精炼复用,功能优先保证核心交互完整;宁可精简也不允许超时截断,必须一次性输出到 </html>。',
+  '【行数预算】严格遵守下方「本轮行数预算」指令,必须一次性输出到 </html>,宁可精简也不允许超时截断。',
 ].join('\n');
 
 // 截断重试时附加的更严格精简指令
 const RETRY_SUFFIX =
   '\n注意:上一次输出中途被截断,未能输出完整 HTML。这次必须大幅精简:总代码量控制在 180 行以内,删减注释与装饰性细节,优先保证一次性输出完整 HTML(以 </html> 结束)。';
+
+// T35 复杂度自适应行数预算:需求越复杂,越要在预算内更早收敛。
+// 实测差异根因:复杂计算器提示词(多分区 + 多功能)按 250 行预算生成会在 130s 软超时内被截断,
+// 而简化计数器提示词可在预算内完成——因此对复杂需求收紧行数上限,换取「一次性输出完整 HTML」。
+function codeLineBudget(intent: Intent, prompt: string): number {
+  const complex = prompt.length > 110 || intent.zones.length >= 2 || intent.features.length >= 4;
+  return complex ? 190 : 250;
+}
 
 // 产物净化:剥离围栏/前后杂文,仅保留完整 HTML 文档
 function sanitizeHtml(raw: string): string {
@@ -457,9 +470,15 @@ Deno.serve(async (req) => {
     '- 上文 250 行上限在增量模式下放宽到 340 行;若两者冲突,一律以「完整保留当前版本内容」为先,绝不允许为控制行数删掉既有内容。',
     '- 输出前自检:当前版本里每一段可见文字都必须能在新产物中原样找到(本次要求修改的除外),缺失即为错误输出。',
   ].join('\n');
-  const codeSystem = previousHtml ? CODE_SYSTEM + INCREMENT_SYSTEM : CODE_SYSTEM;
+  const budgetLines = codeLineBudget(intent, prompt);
+  const BUDGET_DIRECTIVE =
+    `\n【本轮行数预算】总代码量必须控制在 ${budgetLines} 行以内(约 ${Math.round((budgetLines * 34) / 1024)}KB):` +
+    '注释与空行最少化,样式精炼复用,功能优先保证核心交互完整;必须一次性输出到 </html>。';
+  const codeSystem = (previousHtml ? CODE_SYSTEM + INCREMENT_SYSTEM : CODE_SYSTEM) + BUDGET_DIRECTIVE;
 
-  const callGateway = (userContent: string, model: string) =>
+  // T35:token 用量为可选增强——若上游不接受 stream_options,自动去掉该参数重试一次,绝不影响生成
+  let usageUnsupported = false;
+  const callGateway = (userContent: string, model: string, includeUsage = true) =>
     fetch(`${aiBase.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: aiHeaders,
@@ -468,12 +487,23 @@ Deno.serve(async (req) => {
         stream: true,
         max_tokens: MAX_TOKENS,
         enable_thinking: false,
+        ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
         messages: [
           { role: 'system', content: codeSystem },
           { role: 'user', content: userContent },
         ],
       }),
     });
+
+  const callGatewayResilient = async (userContent: string, model: string): Promise<Response> => {
+    const resp = await callGateway(userContent, model, !usageUnsupported);
+    if (resp.ok || usageUnsupported || resp.status !== 400) return resp;
+    const detail = await resp.text().catch(() => '');
+    if (!/stream_options|usage/i.test(detail)) return new Response(detail, { status: 400 });
+    usageUnsupported = true;
+    console.warn(JSON.stringify({ requestId, streamOptionsUnsupported: true, model }));
+    return callGateway(userContent, model, false);
+  };
 
   // T23:主模型失败(连接异常/4xx/5xx/限流)时在同一次请求内按序尝试备用模型;
   // 同一模型遇 5xx/429 先短暂退避原地重试一次(T21 韧性保留),仍失败才降级到下一个模型。
@@ -482,21 +512,41 @@ Deno.serve(async (req) => {
   let upstream: Response | null = null;
   let activeModel = '';
   const triedModels: { model: string; status: string }[] = [];
+  // T35:模型降级链的现场证据——每次尝试的模型/结果/耗时逐条留痕,随 SSE diagnostics 事件与日志透出
+  const modelTrace: { model: string; outcome: string; status: string; elapsedMs: number; degraded: boolean }[] = [];
+  // T35:首字节停滞切换留痕,随 diagnostics 事件透出
+  const stallSwitches: { from: string; to: string; atMs: number }[] = [];
   outer: for (const model of MODELS) {
     for (let sameModelAttempt = 1; sameModelAttempt <= 2; sameModelAttempt += 1) {
-      if (Date.now() - requestStartedAt > SOFT_DEADLINE_MS - 15_000) break outer;
+      if (Date.now() - requestStartedAt > SOFT_DEADLINE_MS - 15_000) {
+        modelTrace.push({ model, outcome: 'skipped-budget-exhausted', status: 'not-attempted', elapsedMs: 0, degraded: true });
+        break outer;
+      }
+      const attemptStartedAt = Date.now();
       try {
-        const resp = await callGateway(userPrompt, model);
+        const resp = await callGatewayResilient(userPrompt, model);
         if (resp.ok && resp.body) {
           upstream = resp;
           activeModel = model;
+          modelTrace.push({
+            model,
+            outcome: 'selected',
+            status: String(resp.status),
+            elapsedMs: Date.now() - attemptStartedAt,
+            degraded: modelTrace.some((t) => t.model !== model),
+          });
           break outer;
         }
         const detail = await resp.text().catch(() => '');
         // T25 排查:403 需区分「账户余额不足」(业务错误,重试无意义)与网关拦截,按响应体归类
-        triedModels.push({
+        const status = /balance is insufficient/i.test(detail) ? 'insufficient-balance' : String(resp.status);
+        triedModels.push({ model, status });
+        modelTrace.push({
           model,
-          status: /balance is insufficient/i.test(detail) ? 'insufficient-balance' : String(resp.status),
+          outcome: sameModelAttempt === 1 && (resp.status >= 500 || resp.status === 429) ? 'http-error-retrying' : 'http-error',
+          status,
+          elapsedMs: Date.now() - attemptStartedAt,
+          degraded: true,
         });
         console.warn(JSON.stringify({ requestId, modelFallback: true, model, status: resp.status, detail: detail.slice(0, 200) }));
         if ((resp.status >= 500 || resp.status === 429) && sameModelAttempt === 1) {
@@ -507,6 +557,7 @@ Deno.serve(async (req) => {
         break;
       } catch (error) {
         triedModels.push({ model, status: 'connection-error' });
+        modelTrace.push({ model, outcome: 'connection-error', status: 'n/a', elapsedMs: Date.now() - attemptStartedAt, degraded: true });
         console.warn(JSON.stringify({ requestId, modelFallback: true, model, error: String(error).slice(0, 200) }));
         break;
       }
@@ -522,7 +573,12 @@ Deno.serve(async (req) => {
     if (allBalance) {
       return new Response(JSON.stringify({ error: 'AI 账户余额不足,请充值后重试' }), {
         status: 402,
-        headers: jsonHeaders(),
+        headers: {
+          ...jsonHeaders(),
+          'X-Atoms-Model-Chain': MODELS.join(','),
+          'X-Atoms-Tried-Models': summary,
+          'Access-Control-Expose-Headers': 'X-Atoms-Model-Chain,X-Atoms-Tried-Models',
+        },
       });
     }
     return new Response(
@@ -531,7 +587,15 @@ Deno.serve(async (req) => {
           ? '平台 AI 网关故障,请稍后重试'
           : `AI 服务响应异常(${summary || '网关无响应'})`,
       }),
-      { status: 502, headers: jsonHeaders() },
+      {
+        status: 502,
+        headers: {
+          ...jsonHeaders(),
+          'X-Atoms-Model-Chain': MODELS.join(','),
+          'X-Atoms-Tried-Models': summary,
+          'Access-Control-Expose-Headers': 'X-Atoms-Model-Chain,X-Atoms-Tried-Models',
+        },
+      },
     );
   }
   // 闭包内 TS 不保留可变变量判空收窄:选定响应固化为常量,流内截断重试改用局部变量
@@ -541,6 +605,10 @@ Deno.serve(async (req) => {
     ...CORS,
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
+    // T35:模型链与当前生效模型以响应头透出,可从现场响应独立核验(不依赖 SSE 解析)
+    'Access-Control-Expose-Headers': 'X-Atoms-Model-Chain,X-Atoms-Active-Model',
+    'X-Atoms-Model-Chain': MODELS.join(','),
+    'X-Atoms-Active-Model': activeModel,
   };
 
   const stream = new ReadableStream<Uint8Array>({
@@ -576,6 +644,14 @@ Deno.serve(async (req) => {
       let finishReason: string | null = null;
       let retried = false;
       let currentUpstream: Response = selectedUpstream;
+      // T35 归因字段:首字节耗时、提前收敛标记、被截断时的字符数、上游 token 用量
+      let firstTokenMs: number | null = null;
+      let proactiveCut = false;
+      let truncatedAtLength = 0;
+      // T35:当前生效通道的首字节停滞窗口起点(切换模型后重置)与停滞标记
+      let modelAttemptStartedAt = Date.now();
+      let stalledFirstByte = false;
+      let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         if (attempt === 2) {
@@ -585,7 +661,7 @@ Deno.serve(async (req) => {
           send({ type: 'message', content: '首轮生成未完整结束,正在用更精简的方案重试…' });
           html = '';
           try {
-            const retryResp = await callGateway(userPrompt + RETRY_SUFFIX, activeModel);
+            const retryResp = await callGatewayResilient(userPrompt + RETRY_SUFFIX, activeModel);
             if (!retryResp.ok || !retryResp.body) {
               const detail = await retryResp.text().catch(() => '');
               console.error(requestId, `重试时 AI 网关返回 ${retryResp.status}`, detail.slice(0, 300));
@@ -610,13 +686,38 @@ Deno.serve(async (req) => {
               await reader.cancel().catch(() => undefined);
               break;
             }
-            // 即使上游停滞不吐数据,也要在软超时点醒来收尾,而不是被平台强制回收
+            // T35:首轮临近软超时且尚未收尾时主动切断,把剩余预算交给「精简重试」,
+            // 避免耗到 130s 被平台回收后整轮失败(复杂提示词超时、简化提示词成功的差异根因)
+            if (attempt === 1 && !retried && remaining <= PROACTIVE_CUT_MS && !html.includes('</html>')) {
+              proactiveCut = true;
+              truncatedAtLength = html.length;
+              await reader.cancel().catch(() => undefined);
+              break;
+            }
+            // 即使上游停滞不吐数据,也要在软超时点醒来收尾,而不是被平台强制回收;
+            // T35:首字节尚未到达且仍有备用通道时,提前在停滞阈值醒来以便切换模型。
+            const nextModelIndex = MODELS.indexOf(activeModel) + 1;
+            const stallBudget =
+              firstTokenMs === null && nextModelIndex < MODELS.length
+                ? Math.max(0, modelAttemptStartedAt + STALL_SWITCH_MS - Date.now())
+                : Number.POSITIVE_INFINITY;
+            const waitMs = Math.min(remaining, stallBudget);
             const raced = await Promise.race([
               reader.read(),
-              new Promise<'deadline'>((resolve) => setTimeout(() => resolve('deadline'), remaining)),
+              new Promise<'deadline' | 'stall'>((resolve) =>
+                setTimeout(
+                  () => resolve(waitMs === remaining ? 'deadline' : 'stall'),
+                  Math.max(1, waitMs),
+                ),
+              ),
             ]);
             if (raced === 'deadline') {
               timedOut = true;
+              await reader.cancel().catch(() => undefined);
+              break;
+            }
+            if (raced === 'stall') {
+              stalledFirstByte = true;
               await reader.cancel().catch(() => undefined);
               break;
             }
@@ -632,10 +733,12 @@ Deno.serve(async (req) => {
               if (!payload || payload === '[DONE]') continue;
               try {
                 const chunk = JSON.parse(payload);
+                if (chunk?.usage) usage = chunk.usage;
                 const choice = chunk?.choices?.[0];
                 if (choice?.finish_reason) finishReason = String(choice.finish_reason);
                 const piece = typeof choice?.delta?.content === 'string' ? choice.delta.content : '';
                 if (!piece) continue;
+                if (firstTokenMs === null) firstTokenMs = Date.now() - startedAt;
                 html += piece;
                 const percent = Math.min(99, Math.round((html.length / ESTIMATE_TOTAL) * 100));
                 send({ type: 'code-delta', delta: piece, percent });
@@ -647,6 +750,60 @@ Deno.serve(async (req) => {
         } catch (error) {
           // 错误统一由收尾分支透出,避免重复 error 事件
           console.error(requestId, '读取 AI 流失败', error);
+        }
+        // T35:首字节停滞(上游 200 但长时间无任何内容)时,在预算内切换到下一个模型通道继续生成,
+        // 而不是把整轮预算耗尽后失败;切换后重新计入该通道的首字节停滞窗口。
+        if (stalledFirstByte && !timedOut && !html) {
+          const stallRemaining = SOFT_DEADLINE_MS - (Date.now() - startedAt);
+          const switchIndex = MODELS.indexOf(activeModel) + 1;
+          if (stallRemaining > 30_000 && switchIndex < MODELS.length) {
+            const stalledModel = activeModel;
+            const nextModel = MODELS[switchIndex];
+            modelTrace.push({
+              model: stalledModel,
+              outcome: 'stalled-first-byte',
+              status: '200-no-output',
+              elapsedMs: Date.now() - modelAttemptStartedAt,
+              degraded: true,
+            });
+            stallSwitches.push({ from: stalledModel, to: nextModel, atMs: Date.now() - startedAt });
+            console.warn(JSON.stringify({ requestId, stallSwitch: true, from: stalledModel, to: nextModel }));
+            send({ type: 'message', content: '当前模型响应较慢,正在切换备用模型继续生成…' });
+            try {
+              const switched = await callGatewayResilient(userPrompt, nextModel);
+              if (switched.ok && switched.body) {
+                currentUpstream = switched;
+                activeModel = nextModel;
+                modelAttemptStartedAt = Date.now();
+                stalledFirstByte = false;
+                modelTrace.push({
+                  model: nextModel,
+                  outcome: 'selected-after-stall',
+                  status: String(switched.status),
+                  elapsedMs: 0,
+                  degraded: true,
+                });
+                attempt = 0; // 复位轮次:切换模型后仍保留「精简重试」额度
+                continue;
+              }
+              modelTrace.push({
+                model: nextModel,
+                outcome: 'http-error',
+                status: String(switched.status),
+                elapsedMs: 0,
+                degraded: true,
+              });
+            } catch (error) {
+              modelTrace.push({
+                model: nextModel,
+                outcome: 'connection-error',
+                status: 'n/a',
+                elapsedMs: 0,
+                degraded: true,
+              });
+              console.error(requestId, '切换备用模型失败', String(error).slice(0, 200));
+            }
+          }
         }
         if (html.includes('</html>') || timedOut) break;
       }
@@ -663,7 +820,7 @@ Deno.serve(async (req) => {
         if (remainingBudget > 25_000) {
           send({ type: 'message', content: '检测到产物代码存在语法问题,正在自动修复…' });
           try {
-            const fixResp = await callGateway(
+            const fixResp = await callGatewayResilient(
               '以下单文件 HTML 应用的 JavaScript 存在语法错误:' +
                 `${syntaxErrors.join('; ').slice(0, 300)}。\n` +
                 '请输出修复后的完整 HTML 文档:只允许修复语法错误(如 const/let 缺少 = 初始化器、残留逗号、未闭合括号),' +
@@ -723,6 +880,34 @@ Deno.serve(async (req) => {
         console.error(JSON.stringify({ requestId, timedOut, outputLength: finalHtml.length, finishReason, retried }));
         send({ type: 'error', message: reason });
       }
+      // T35:诊断事件——把「真实 Provider/模型顺序 + 超时与截断归因」显式写进响应流,
+      // 供走查脚本从现场响应独立断言,而不是只从代码里声明模型链。
+      const diagnostics = {
+        type: 'diagnostics',
+        modelChain: MODELS,
+        modelTrace,
+        activeModel,
+        degraded: modelTrace.filter((t) => t.outcome !== 'selected').length > 0,
+        planSource,
+        planMs,
+        budgetLines,
+        softDeadlineMs: SOFT_DEADLINE_MS,
+        proactiveCutMs: PROACTIVE_CUT_MS,
+        stallSwitchMs: STALL_SWITCH_MS,
+        stallSwitches,
+        elapsedMs: Date.now() - requestStartedAt,
+        firstTokenMs: firstTokenMs,
+        finishReason,
+        timedOut,
+        proactiveCut,
+        retried,
+        truncatedAtLength,
+        syntaxFixed,
+        outputLength: finalHtml.length,
+        usage,
+        attempts: modelTrace.length,
+      };
+      send(diagnostics);
       send({ type: 'done', stopped: false });
       closed = true;
       controller.close();
@@ -738,6 +923,12 @@ Deno.serve(async (req) => {
           retried,
           syntaxFixed,
           triedModels,
+          modelTrace,
+          stallSwitches,
+          proactiveCut,
+          truncatedAtLength,
+          usage,
+          elapsedMs: diagnostics.elapsedMs,
         }),
       );
     },

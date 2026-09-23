@@ -2,7 +2,8 @@
  * 智能体运行器:负责「分步计划 → 流式代码 → 可运行应用」的生成管线。
  *
  * - Supabase 已连接时:优先调用平台 Edge Function(app_atoms_agent_generate,SSE 流式),
- *   模型由服务端指定(claude-opus-5 [gentxt]),前端不持有任何第三方密钥。
+ *   模型由服务端指定,主链 deepseek-v4-flash → gpt-5.4 → gemini-3.1-pro-preview 按序降级,
+ *   前端不持有任何第三方密钥;真实生效模型与降级过程由服务端 diagnostics 事件与响应头透出。
  * - Supabase 未连接(演示模式):在本地执行完整的生成剧本,产出真实可运行的单文件
  *   HTML 应用,保证端到端体验;Edge Function 就绪后自动无缝切换。
  */
@@ -27,7 +28,33 @@ export type AgentEvent =
   | { type: 'code-delta'; delta: string; percent?: number }
   | { type: 'app'; app: DemoApp }
   | { type: 'done'; stopped: boolean }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** T35:生成诊断事件——真实模型链与降级现场证据、超时/截断归因(不影响产物交付) */
+  | ({ type: 'diagnostics' } & AgentDiagnostics);
+
+/** T35 诊断载荷:与 Edge Function 的 diagnostics 事件字段一一对应 */
+export interface AgentDiagnostics {
+  modelChain: string[];
+  modelTrace: { model: string; outcome: string; status: string; elapsedMs: number; degraded: boolean }[];
+  activeModel: string;
+  degraded: boolean;
+  planSource: string;
+  planMs: number;
+  budgetLines: number;
+  softDeadlineMs: number;
+  proactiveCutMs: number;
+  elapsedMs: number;
+  firstTokenMs: number | null;
+  finishReason: string | null;
+  timedOut: boolean;
+  proactiveCut: boolean;
+  retried: boolean;
+  truncatedAtLength: number;
+  syntaxFixed: boolean;
+  outputLength: number;
+  usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+  attempts: number;
+}
 
 export interface RunAgentOptions {
   prompt: string;

@@ -1,0 +1,70 @@
+{
+  "steps": [
+    {
+      "name": "评审账号创建(邮箱已确认)",
+      "ok": true,
+      "detail": "t34.reviewer@atoms-demo.dev"
+    },
+    {
+      "name": "评审账号可正常登录",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "注册触发器已创建资料与默认工作区",
+      "ok": true,
+      "detail": "资料 T34 验收评审 / 工作区 T34 验收评审 的 Atoms"
+    },
+    {
+      "name": "会话/项目/消息仅可见本人数据(RLS)",
+      "ok": true,
+      "detail": "会话 0 / 项目 0 / 消息 0"
+    },
+    {
+      "name": "越权查询他人(真实账号)项目返回空集",
+      "ok": true,
+      "detail": "目标账号 e9f9ec5e-0a13-4783-90e2-6174690aa450 | HTTP 200 命中 0"
+    },
+    {
+      "name": "越权查询他人会话返回空集",
+      "ok": true,
+      "detail": "HTTP 200 命中 0"
+    },
+    {
+      "name": "公共表(社区应用)对评审账号只读可见",
+      "ok": true,
+      "detail": "HTTP 200 命中 3"
+    },
+    {
+      "name": "公共表写入被 RLS 拒绝(无写策略)",
+      "ok": true,
+      "detail": "HTTP 403(401/403 = 策略拒绝;400 = 请求体非法)"
+    },
+    {
+      "name": "评审账号可创建项目",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "评审账号可经原子 RPC 写入 v1 版本快照",
+      "ok": true,
+      "detail": "HTTP 200 返回 1"
+    }
+  ],
+  "evidence": {
+    "email": "t34.reviewer@atoms-demo.dev",
+    "userId": "1553d823-02af-41a4-bc68-4082ba41f696",
+    "defaultSpace": "T34 验收评审 的 Atoms",
+    "sampleProjectId": "53732e24-ae94-4245-b9d7-a842094565cd",
+    "validHours": 168,
+    "validDays": 7,
+    "createdAt": "2026-09-22T11:32:03.009461+00:00",
+    "expiresAt": "2026-09-29T11:32:03.009461+00:00",
+    "projectRef": "pofchtyjqwevchiiqags",
+    "supabaseUrl": "https://pofchtyjqwevchiiqags.supabase.co",
+    "previewUrl": "http://localhost:3000",
+    "loginUrl": "http://127.0.0.1:8899/go"
+  },
+  "passed": 10,
+  "total": 10
+}

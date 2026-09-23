@@ -1,0 +1,145 @@
+{
+  "steps": [
+    {
+      "name": "B1 全新无痕上下文初始为未登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B2 无痕上下文登录账号 A 成功(工作区恢复)",
+      "ok": true,
+      "detail": "t34.reviewer@atoms-demo.dev | T34 验收评审 的 Atoms"
+    },
+    {
+      "name": "B3 账号 A 云端数据准备完成(收藏会话 + 消息)",
+      "ok": true,
+      "detail": "conv=201 msg=201"
+    },
+    {
+      "name": "B4 刷新后账号 A 工作区与会话恢复(侧边栏可见收藏会话)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B5 账号 A 会话消息完整恢复(详情页可见消息原文)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B6 账号 A 项目恢复(我的项目页)",
+      "ok": true,
+      "detail": "project=T34 评审样本应用"
+    },
+    {
+      "name": "B7 账号 A 版本快照恢复(查看器历史版本面板)",
+      "ok": true,
+      "detail": "服务端版本数=1 面板可见=false"
+    },
+    {
+      "name": "B8 账号 A 收藏状态持久化",
+      "ok": true,
+      "detail": "is_favorite=true"
+    },
+    {
+      "name": "B9 账号 A 退出登录回到未登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B10 退出后新上下文无账号 A 残留(未登录且无数据展示)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B11 新上下文无本地会话令牌残留",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B12 账号 B 注册登录成功并创建独立工作区",
+      "ok": true,
+      "detail": "t35-iso-1790135436509@atoms.test"
+    },
+    {
+      "name": "B13 账号 B 前端不可见账号 A 的会话与工作区",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B14 账号 B 前端不可见账号 A 的项目",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B15 越权查询账号 A 会话返回空集(HTTP 200 命中 0)",
+      "ok": true,
+      "detail": "HTTP 200 命中 0"
+    },
+    {
+      "name": "B16 越权查询账号 A 项目返回空集",
+      "ok": true,
+      "detail": "HTTP 200 命中 0"
+    },
+    {
+      "name": "B17 越权查询账号 A 消息返回空集",
+      "ok": true,
+      "detail": "HTTP 200 命中 0"
+    },
+    {
+      "name": "B18 越权查询账号 A 版本快照返回空集",
+      "ok": true,
+      "detail": "HTTP 200 命中 0"
+    },
+    {
+      "name": "B19 越权查询账号 A 收藏会话返回空集",
+      "ok": true,
+      "detail": "HTTP 200 命中 0"
+    },
+    {
+      "name": "B20 越权写入账号 A 项目被拒且原数据不变",
+      "ok": true,
+      "detail": "HTTP 200 影响 0 行,原名称=T34 评审样本应用"
+    },
+    {
+      "name": "B21 越权经原子 RPC 写入账号 A 版本被拒",
+      "ok": true,
+      "detail": "HTTP 500"
+    },
+    {
+      "name": "B22 账号 B 仅可见本人会话(RLS 正向核验)",
+      "ok": true,
+      "detail": "命中 0"
+    },
+    {
+      "name": "B23 无未预期控制台错误",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B24 走查临时会话与消息已回收(不残留核验数据)",
+      "ok": true,
+      "detail": "conv=204 msg=204 残留=0"
+    },
+    {
+      "name": "B25 临时账号 B 已回收(无残留)",
+      "ok": true,
+      "detail": "remaining=0"
+    }
+  ],
+  "consoleErrors": [],
+  "evidence": {
+    "accountA": {
+      "email": "t34.reviewer@atoms-demo.dev",
+      "userId": "1553d823-02af-41a4-bc68-4082ba41f696",
+      "conversationId": "58cc96b8-5f9e-4cb9-a076-4019ff19aabf",
+      "projectId": "53732e24-ae94-4245-b9d7-a842094565cd",
+      "versionCount": 1
+    },
+    "accountB": {
+      "email": "t35-iso-1790135436509@atoms.test",
+      "userId": "d4bd79b7-4b69-4a66-9a03-cb28fe2fff61"
+    }
+  },
+  "passed": 25,
+  "total": 25
+}

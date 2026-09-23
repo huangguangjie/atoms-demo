@@ -78,13 +78,26 @@ server {
 | t31-auth-walkthrough.mjs | 21/21 | 认证与状态恢复 A1–A21:登录入口/注册建默认工作区/会话持久化/刷新保持登录态与会话项目/退出清令牌/重登恢复/清空存储回落/refresh token 换新 access token 访问受保护资源/无痕上下文完整恢复 |
 | t32-failure-rollback-walkthrough.mjs | 35/35 | 失败回退与幂等专项(约 34.3s):无效/空/截断/内联脚本语法错误产物不落库且不入 Preview 与源码、版本写入 RPC 失败时项目/快照/版本号整体回滚、成功落库后才切换 Preview 与项目状态、失败助手消息 `failed` + `metadata(error, prompt)`、刷新恢复失败卡与需求原文与重试入口与历史版本、连点「重新生成」幂等(不重复消息/项目/版本)、队列续跑同锁、公开表瞬时 401 自动刷新会话并有限重试 |
 | test_agent_e2e.py(真实 AI) | 通过 | AI 余额恢复后登录态复测通过,SSE 事件齐全,HTML 约 6789 字符 |
-| t31_reviewer_account.py(评审账号) | 10/10 | 评审账号创建与隔离验收:注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人数据返回空集、公共表只读、无写策略写入被拒、可创建项目并经原子 RPC 写 v1 快照;结果落盘 `app/backend/reports/t31-reviewer-account.json` |
+| t31_reviewer_account.py(评审账号,已回收) | 10/10 | 评审账号创建与隔离验收:注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人数据返回空集、公共表只读、无写策略写入被拒、可创建项目并经原子 RPC 写 v1 快照;结果落盘 `app/backend/reports/t31-reviewer-account.json`(该 24 小时账号已于 T32 彻底删除) |
+| t34_reviewer_account.py(评审账号,7 天有效) | 10/10 | 一周有效期评审账号重建与隔离验收(同上十项口径);账号 `t34.reviewer@atoms-demo.dev`,有效期 **7 天(168 小时)**,结果落盘 `app/backend/reports/t34-reviewer-account.json`,到期回收脚本 `app/backend/reports/t34-reviewer-revoke.sql`(幂等) |
 
 ### 部署溯源(T31)
 
 - Vite 构建期(`app/frontend/vite.config.ts`)读取当前 Git SHA / ref / 构建时间,经 `define` 注入;`src/main.tsx` 挂载为 `window.__ATOMS_BUILD__`,类型声明见 `src/vite-env.d.ts`。
 - 线上核对方式:在已发布站点控制台执行 `window.__ATOMS_BUILD__`,与本次推送的 `main` 提交 SHA 比对,即可确认部署产物对应提交。
-- 核验口径:注入值取自**当次构建所在的提交**,因此「部署产物注入的 SHA」应恒等于该次发布提交 SHA;本轮以发布提交为工作树重新构建,实测注入 SHA 与远端 `main` 提交一致(ref `main`),构建处理 1877 个模块并预渲染 `/` 与 `/blog/`。
+- 核验口径:注入值取自**当次构建所在的提交**,因此「部署产物注入的 SHA」应恒等于该次发布提交 SHA。
+
+### 部署溯源 SHA 三方对照与漂移归因(T36)
+
+- 三方口径:①远端 `main` 提交 SHA;②本地按同一提交重新构建后产物内注入的 SHA;③已发布站点控制台 `window.__ATOMS_BUILD__`。
+- 受控实验(2026-09-22):以远端基线 `dd347f996784ae361c03eeaa821500d0c210c64a` 为工作树构建,产物注入 SHA 实测为 `dd347f996784ae361c03eeaa821500d0c210c64a`;以当前 HEAD `ac5c3bdb87007d9d501353209eb1a719e7f85d18` 构建,产物注入 SHA 实测为 `ac5c3bdb87007d9d501353209eb1a719e7f85d18`。两次注入值与各自提交一一对应,证明注入机制正确,不存在错位、缓存或随机值。
+- 漂移根因(排除法结论):
+  1. **未重新 Publish(主因)**:平台已发布站点是发布当时的构建快照,后续本地提交不会自动同步;`dd347f9` 之后的新提交只存在于仓库与本地构建,因此线上值落后于 `main`。
+  2. **不是 CI 未注入 SHA**:CI 未提供 `GITHUB_SHA` 时 `vite.config.ts` 回退读取 `git rev-parse HEAD`,受控实验已证明两条路径都能得到正确值。
+  3. **不是发布后新增提交导致的错位**:注入值严格等于构建时所在提交,不存在「旧 SHA 打新包」。
+- 闭环要求:在 App Viewer 点击 **Publish** 重新发布后读取 `window.__ATOMS_BUILD__`,期望与本次推送后的 `main` 提交 SHA 完全一致。
+- 平台域名实测:环境变量 `PUBLIC_BASE_URL` 为平台站点(`https://atoms.dev`,HTTP 200);`PREVIEW_BASE_URL` / `DEV_BASE_URL` 指向开发预览服务(`...-preview.app.atoms.dev` 返回开发服务器页面,不是发布产物),因此线上 SHA 只能从 App Viewer 发布后的站点读取。
+- 本轮构建:预渲染 `/` 与 `/blog/` 两页,构建耗时约 9 秒。
 
 ### 线上一致性与失败语义核验(T32)
 
@@ -92,6 +105,30 @@ server {
 - 结构探测与定位辅助脚本:`t32_columns_probe.sql`(核对真实列结构)、`t32_inconsistency_probe.sql`(定位项目与快照不一致来源,半写统计口径已按真实结构修正)。
 - 评审账号回收:`app/backend/reports/t32-reviewer-revoke-exec.sql` 按真实表结构级联删除 `t31.reviewer@atoms-demo.dev` 的资料、工作区、项目、版本与 `auth.users` 记录;二次执行结果为 `auth_users_deleted=0`、`remaining_users=0`,证明脚本幂等且线上无残留。
 - 前端失败语义(源码与 Preview 一致性的保证):产物在落库与展示前经产物守卫校验,无效产物不入 Preview/源码/数据库;版本写入以「RPC 成功返回」为唯一成功判据,成功后才切换 Preview 与源码;失败助手消息标记 `failed` 并携带 `metadata(error, prompt)`;`flowLockRef` 保证连点重试幂等,`appPersisted` 保证同轮次重复 `app` 事件只落库一次。
+
+### 一次性评审账号(T34,有效期 7 天)
+
+- 账号:`t34.reviewer@atoms-demo.dev`(全新独立账号,不复用 T32 已删除账号的任何数据)。
+- 有效期:**7 天(168 小时)**,自创建时刻起计;创建与到期时间写在凭据交付文件与回收脚本注释首部。
+- 凭据交付:仅写入 `/tmp/t34-reviewer-credentials.txt`,不入数据库、不进仓库;仓库内报告 `app/backend/reports/t34-reviewer-account.json` 只保留邮箱、有效期与隔离证据,不含密码。
+- 创建与隔离校验:`python app/backend/scripts/t34_reviewer_account.py` → 10/10 PASS(注册触发器建资料与默认工作区、本人数据 RLS 隔离、越权查询他人项目/会话返回空集、公共表只读、无写策略写入被拒 HTTP 403、可创建项目并经原子 RPC 写 v1 快照)。
+- 登录链路复验:`t31-auth-walkthrough.mjs` 支持环境变量 `REVIEWER_EMAIL` / `REVIEWER_PASSWORD` / `REVIEWER_SPACE_NAME` 复用已存在账号(不再注册临时账号),以该 reviewer 账号实测 21/21 PASS——登录 → 刷新保持登录态与数据 → 退出(本地会话令牌清空、工作区数据不再展示)→ 重新登录(会话与项目恢复)→ 清空浏览器存储回落未登录并重登恢复 → refresh token 换新 access token 访问受保护资源 → 全新无痕上下文登录后工作区/会话/项目完整恢复。
+- 到期回收:执行 `app/backend/reports/t34-reviewer-revoke.sql`(幂等,可重复执行),级联删除资料、工作区、会话、消息、项目与版本快照及 `auth.users` 记录;重复执行后 `remaining_users` / `remaining_profiles` 稳定为 0。脚本亦提供可逆的临时禁用语句。
+
+### 双账号隔离与全新会话恢复(T35/T36)
+
+- 脚本:`app/frontend/t35-dual-account-isolation.mjs`(结果落盘 `app/frontend/t35-dual-account-isolation-result.json`)。
+- 结果:**25/25 PASS**。
+- 覆盖:全新无痕上下文初始未登录 → 登录账号 A 后工作区/会话/消息/项目/版本完整恢复 → 刷新后收藏会话与消息仍恢复 → 退出后新上下文无令牌无残留 → 账号 B 前端不可见账号 A 数据 → REST/RLS 查询返回空集 → 越权项目写入影响 0 行且原数据不变 → 越权原子版本 RPC 被拒(HTTP 500)→ 无未预期控制台错误。
+- 数据构造按线上真实列结构:`messages(id, conversation_id, role, content, created_at, metadata)` 无 `user_id`;临时账号 B 与走查会话/消息在收尾回收(`残留=0`、`remaining=0`)。
+
+### 生成稳定性与降级顺序现场取证(T35/T36)
+
+- 脚本:`app/backend/scripts/t35_generation_stability.py`(报告 `app/backend/reports/t35-generation-stability.json`)。
+- 结果:**12/12 PASS**。
+- 复杂计算器需求:模型链实测 `deepseek-v4-flash → gpt-5.4 → gemini-3.1-pro-preview`;首通道在 `STALL_SWITCH_MS = 45_000` 处因首字节停滞被切换,最终 `activeModel=gpt-5.4`、`attempts=3`、`degraded=True`,总耗时 `122,214ms`(仍在 `SOFT_DEADLINE_MS = 130_000` 预算内),交付 HTML 7,755 字符且无语法错误。
+- 简化计数器需求:首通道一次命中,`activeModel=deepseek-v4-flash`、`attempts=1`、`degraded=False`,耗时 `31,567ms`,交付 HTML 6,469 字符。
+- 结论:瓶颈是上游首通道首字节停滞(HTTP 200 但停留在推理阶段),**不是**提示词复杂度超预算,**也不是**模型降级顺序失效;降级链按声明顺序生效且尝试留痕完整。
 
 ## 5. 发布后验证清单
 

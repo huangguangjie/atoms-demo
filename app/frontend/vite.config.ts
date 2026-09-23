@@ -40,9 +40,11 @@ function resolveGitValue(args: string[], fallback: string): string {
 
 function resolveBuildInfo() {
   const env = process.env;
-  const sha = (env.GITHUB_SHA || env.VERCEL_GIT_COMMIT_SHA || env.CI_COMMIT_SHA || env.GIT_COMMIT
+  // T35:显式注入优先(用于「以公开仓库 main 的实际提交作为构建输入重跑构建」的归因核验),
+  // 其次 CI 环境变量,最后回退本地 git rev-parse HEAD
+  const sha = (env.ATOMS_BUILD_SHA || env.GITHUB_SHA || env.VERCEL_GIT_COMMIT_SHA || env.CI_COMMIT_SHA || env.GIT_COMMIT
     || resolveGitValue(['rev-parse', 'HEAD'], 'unknown')).trim();
-  const ref = (env.GITHUB_REF_NAME || env.VERCEL_GIT_COMMIT_REF || env.CI_COMMIT_REF_NAME
+  const ref = (env.ATOMS_BUILD_REF || env.GITHUB_REF_NAME || env.VERCEL_GIT_COMMIT_REF || env.CI_COMMIT_REF_NAME
     || resolveGitValue(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown')).trim();
   return {
     sha,

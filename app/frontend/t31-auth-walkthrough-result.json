@@ -6,14 +6,14 @@
       "detail": ""
     },
     {
-      "name": "A2 注册成功并进入登录态(默认工作区自动创建)",
+      "name": "A2 reviewer 账号登录成功并进入登录态(默认工作区已就绪)",
       "ok": true,
-      "detail": "t31-auth-1790001713815 的 Atoms"
+      "detail": "t34.reviewer@atoms-demo.dev | T34 验收评审 的 Atoms"
     },
     {
       "name": "A3 会话已持久化到浏览器存储(access/refresh 齐全)",
       "ok": true,
-      "detail": "user=7474172b-7c49-4bc3-b9ae-6db59b82eda2"
+      "detail": "user=a81b3474-6fe9-4a0b-8da8-d1f4e78e41a9"
     },
     {
       "name": "A4 云端默认工作区与界面一致",
